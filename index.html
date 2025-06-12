@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>引用参考文献作成ツール</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1><i class="fas fa-quote-left"></i> 引用参考文献作成ツール</h1>
+            <p>書籍、論文、Webサイトの引用文献を自動生成</p>
+        </header>
+
+        <div class="tab-container">
+            <div class="tabs">
+                <button class="tab-button active" data-tab="book">
+                    <i class="fas fa-book"></i>
+                    書籍
+                </button>
+                <button class="tab-button" data-tab="paper">
+                    <i class="fas fa-file-alt"></i>
+                    論文
+                </button>
+                <button class="tab-button" data-tab="website">
+                    <i class="fas fa-globe"></i>
+                    Webサイト
+                </button>
+            </div>
+        </div>
+
+        <!-- 書籍タブ -->
+        <div id="book-tab" class="tab-content active">
+            <div class="search-section">
+                <h2><i class="fas fa-search"></i> 書籍検索</h2>
+                <div class="search-form">
+                    <div class="input-group">
+                        <select id="search-type">
+                            <option value="title">タイトル検索</option>
+                            <option value="isbn">ISBN検索</option>
+                        </select>
+                        <input type="text" id="book-search" placeholder="書籍タイトルまたはISBNを入力">
+                        <button id="search-button" class="btn-primary">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="search-results" class="search-results"></div>
+                <div id="loading" class="loading hidden">
+                    <i class="fas fa-spinner fa-spin"></i> 検索中...
+                </div>
+            </div>
+        </div>
+
+        <!-- 論文タブ -->
+        <div id="paper-tab" class="tab-content">
+            <div class="url-section">
+                <h2><i class="fas fa-link"></i> J-STAGE URL入力</h2>
+                <div class="input-group">
+                    <input type="url" id="jstage-url" placeholder="J-STAGEのURLを入力してください">
+                    <button id="extract-paper" class="btn-primary">
+                        <i class="fas fa-extract"></i> 抽出
+                    </button>
+                </div>
+                <div id="paper-loading" class="loading hidden">
+                    <i class="fas fa-spinner fa-spin"></i> 抽出中...
+                </div>
+            </div>
+        </div>
+
+        <!-- Webサイトタブ -->
+        <div id="website-tab" class="tab-content">
+            <div class="url-section">
+                <h2><i class="fas fa-link"></i> WebサイトURL入力</h2>
+                <div class="input-group">
+                    <input type="url" id="website-url" placeholder="WebサイトのURLを入力してください">
+                    <button id="extract-website" class="btn-primary">
+                        <i class="fas fa-extract"></i> 抽出
+                    </button>
+                </div>
+                <div id="website-loading" class="loading hidden">
+                    <i class="fas fa-spinner fa-spin"></i> 抽出中...
+                </div>
+            </div>
+        </div>
+
+        <!-- 結果表示 -->
+        <div id="result-section" class="result-section hidden">
+            <h2><i class="fas fa-clipboard-list"></i> 生成された引用文献</h2>
+            <div class="result-container">
+                <div id="citation-result" class="citation-result"></div>
+                <button id="copy-button" class="btn-secondary">
+                    <i class="fas fa-copy"></i> コピー
+                </button>
+            </div>
+        </div>
+
+        <!-- エラー表示 -->
+        <div id="error-section" class="error-section hidden">
+            <div class="error-message">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span id="error-text"></span>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
