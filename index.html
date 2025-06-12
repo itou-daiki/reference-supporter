@@ -57,14 +57,45 @@
 
         <!-- 論文タブ -->
         <div id="paper-tab" class="tab-content">
-            <div class="url-section">
-                <h2><i class="fas fa-link"></i> J-STAGE URL入力</h2>
-                <div class="input-group">
-                    <input type="url" id="jstage-url" placeholder="J-STAGEのURLを入力してください">
-                    <button id="extract-paper" class="btn-primary">
-                        <i class="fas fa-extract"></i> 抽出
+            <div class="paper-input-section">
+                <h2><i class="fas fa-file-alt"></i> 論文情報抽出</h2>
+                
+                <!-- 入力方法選択 -->
+                <div class="input-method-tabs">
+                    <button class="method-tab active" data-method="jstage">
+                        <i class="fas fa-link"></i> J-STAGE URL
+                    </button>
+                    <button class="method-tab" data-method="doi">
+                        <i class="fas fa-fingerprint"></i> DOI
                     </button>
                 </div>
+                
+                <!-- J-STAGE URL入力 -->
+                <div id="jstage-input" class="input-method-content active">
+                    <div class="input-group">
+                        <input type="url" id="jstage-url" placeholder="J-STAGEのURLを入力してください">
+                        <button id="extract-paper" class="btn-primary">
+                            <i class="fas fa-extract"></i> 抽出
+                        </button>
+                    </div>
+                    <div class="input-help">
+                        例: https://www.jstage.jst.go.jp/article/journal/volume_issue/article_id
+                    </div>
+                </div>
+                
+                <!-- DOI入力 -->
+                <div id="doi-input" class="input-method-content">
+                    <div class="input-group">
+                        <input type="text" id="doi-text" placeholder="DOIを入力してください（例: 10.1000/182）">
+                        <button id="extract-doi" class="btn-primary">
+                            <i class="fas fa-search"></i> 検索
+                        </button>
+                    </div>
+                    <div class="input-help">
+                        DOI（Digital Object Identifier）から論文情報を自動取得します
+                    </div>
+                </div>
+                
                 <div id="paper-loading" class="loading hidden">
                     <i class="fas fa-spinner fa-spin"></i> 抽出中...
                 </div>
