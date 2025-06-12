@@ -9,134 +9,222 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
-    <div class="container">
-        <header class="header">
-            <h1><i class="fas fa-quote-left"></i> 引用参考文献作成ツール</h1>
-            <p>書籍、論文、Webサイトの引用文献を自動生成</p>
-        </header>
-
-        <div class="tab-container">
-            <div class="tabs">
-                <button class="tab-button active" data-tab="book">
-                    <i class="fas fa-book"></i>
-                    書籍
-                </button>
-                <button class="tab-button" data-tab="paper">
-                    <i class="fas fa-file-alt"></i>
-                    論文
-                </button>
-                <button class="tab-button" data-tab="website">
-                    <i class="fas fa-globe"></i>
-                    Webサイト
-                </button>
-            </div>
+    <!-- サイドバー -->
+    <div id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+            <h3><i class="fas fa-cog"></i> 設定</h3>
+            <button id="sidebar-close" class="sidebar-close">
+                <i class="fas fa-times"></i>
+            </button>
         </div>
-
-        <!-- 書籍タブ -->
-        <div id="book-tab" class="tab-content active">
-            <div class="search-section">
-                <h2><i class="fas fa-search"></i> 書籍検索</h2>
-                <div class="search-form">
-                    <div class="input-group">
-                        <select id="search-type">
-                            <option value="title">タイトル検索</option>
-                            <option value="isbn">ISBN検索</option>
-                        </select>
-                        <input type="text" id="book-search" placeholder="書籍タイトルまたはISBNを入力">
-                        <button id="search-button" class="btn-primary">
-                            <i class="fas fa-search"></i>
+        
+        <div class="sidebar-content">
+            <div class="api-section">
+                <h4><i class="fas fa-robot"></i> AI補助機能</h4>
+                <p class="api-description">
+                    Gemini 2.0 Flash APIを使用してより正確な情報抽出を行います（オプション）
+                </p>
+                
+                <div class="form-group">
+                    <label for="gemini-api-key">Gemini API キー:</label>
+                    <div class="api-key-input">
+                        <input type="password" id="gemini-api-key" placeholder="AIStudioで取得したAPIキーを入力">
+                        <button id="toggle-api-key" class="toggle-visibility">
+                            <i class="fas fa-eye"></i>
                         </button>
                     </div>
                 </div>
-                <div id="search-results" class="search-results"></div>
-                <div id="loading" class="loading hidden">
-                    <i class="fas fa-spinner fa-spin"></i> 検索中...
+                
+                <div class="api-links">
+                    <a href="https://aistudio.google.com/app/apikey" target="_blank" class="api-link">
+                        <i class="fas fa-external-link-alt"></i>
+                        APIキーを取得する
+                    </a>
+                </div>
+                
+                <div class="api-toggle">
+                    <label class="switch">
+                        <input type="checkbox" id="enable-ai-assist">
+                        <span class="slider"></span>
+                    </label>
+                    <span class="toggle-label">AI補助機能を有効にする</span>
+                </div>
+                
+                <div class="api-status" id="api-status">
+                    <i class="fas fa-circle status-inactive"></i>
+                    <span>無効</span>
                 </div>
             </div>
+            
+            <div class="help-section">
+                <h4><i class="fas fa-question-circle"></i> ヘルプ</h4>
+                <ul class="help-list">
+                    <li>AI補助機能は抽出精度を向上させます</li>
+                    <li>APIキーは安全に暗号化されて保存されます</li>
+                    <li>機能はいつでもオン/オフできます</li>
+                </ul>
+            </div>
         </div>
+    </div>
+    
+    <!-- メインコンテンツ -->
+    <div class="main-content">
+        <div class="container">
+            <!-- サイドバー開閉ボタン -->
+            <button id="sidebar-toggle" class="sidebar-toggle">
+                <i class="fas fa-cog"></i>
+            </button>
+            
+            <header class="header">
+                <h1><i class="fas fa-quote-left"></i> 引用参考文献作成ツール</h1>
+                <p>書籍、論文、Webサイトの引用文献を自動生成</p>
+            </header>
 
-        <!-- 論文タブ -->
-        <div id="paper-tab" class="tab-content">
-            <div class="paper-input-section">
-                <h2><i class="fas fa-file-alt"></i> 論文情報抽出</h2>
-                
-                <!-- 入力方法選択 -->
-                <div class="input-method-tabs">
-                    <button class="method-tab active" data-method="jstage">
-                        <i class="fas fa-link"></i> J-STAGE URL
+            <div class="tab-container">
+                <div class="tabs">
+                    <button class="tab-button active" data-tab="book">
+                        <i class="fas fa-book"></i>
+                        書籍
                     </button>
-                    <button class="method-tab" data-method="doi">
-                        <i class="fas fa-fingerprint"></i> DOI
+                    <button class="tab-button" data-tab="paper">
+                        <i class="fas fa-file-alt"></i>
+                        論文
+                    </button>
+                    <button class="tab-button" data-tab="website">
+                        <i class="fas fa-globe"></i>
+                        Webサイト
                     </button>
                 </div>
-                
-                <!-- J-STAGE URL入力 -->
-                <div id="jstage-input" class="input-method-content active">
+            </div>
+
+            <!-- 書籍タブ -->
+            <div id="book-tab" class="tab-content active">
+                <div class="search-section">
+                    <h2><i class="fas fa-search"></i> 書籍検索</h2>
+                    <div class="search-form">
+                        <div class="input-group">
+                            <select id="search-type">
+                                <option value="title">タイトル検索</option>
+                                <option value="isbn">ISBN検索</option>
+                            </select>
+                            <input type="text" id="book-search" placeholder="書籍タイトルまたはISBNを入力">
+                            <button id="search-button" class="btn-primary">
+                                <i class="fas fa-search"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="search-results" class="search-results"></div>
+                    <div id="loading" class="loading hidden">
+                        <i class="fas fa-spinner fa-spin"></i> 検索中...
+                    </div>
+                </div>
+            </div>
+
+            <!-- 論文タブ -->
+            <div id="paper-tab" class="tab-content">
+                <div class="paper-input-section">
+                    <h2><i class="fas fa-file-alt"></i> 論文情報抽出</h2>
+                    
+                    <!-- 入力方法選択 -->
+                    <div class="input-method-tabs">
+                        <button class="method-tab active" data-method="jstage">
+                            <i class="fas fa-link"></i> J-STAGE URL
+                        </button>
+                        <button class="method-tab" data-method="doi">
+                            <i class="fas fa-fingerprint"></i> DOI
+                        </button>
+                        <button class="method-tab" data-method="url-doi">
+                            <i class="fas fa-globe"></i> URL (DOI含む)
+                        </button>
+                    </div>
+                    
+                    <!-- J-STAGE URL入力 -->
+                    <div id="jstage-input" class="input-method-content active">
+                        <div class="input-group">
+                            <input type="url" id="jstage-url" placeholder="J-STAGEのURLを入力してください">
+                            <button id="extract-paper" class="btn-primary">
+                                <i class="fas fa-extract"></i> 抽出
+                            </button>
+                        </div>
+                        <div class="input-help">
+                            例: https://www.jstage.jst.go.jp/article/journal/volume_issue/article_id
+                        </div>
+                    </div>
+                    
+                    <!-- DOI入力 -->
+                    <div id="doi-input" class="input-method-content">
+                        <div class="input-group">
+                            <input type="text" id="doi-text" placeholder="DOIを入力してください（例: 10.1000/182）">
+                            <button id="extract-doi" class="btn-primary">
+                                <i class="fas fa-search"></i> 検索
+                            </button>
+                        </div>
+                        <div class="input-help">
+                            DOI（Digital Object Identifier）から論文情報を自動取得します
+                        </div>
+                    </div>
+                    
+                    <!-- URL (DOI含む)入力 -->
+                    <div id="url-doi-input" class="input-method-content">
+                        <div class="input-group">
+                            <input type="url" id="url-doi-text" placeholder="論文のURLを入力してください">
+                            <button id="extract-url-doi" class="btn-primary">
+                                <i class="fas fa-extract"></i> 抽出
+                            </button>
+                        </div>
+                        <div class="input-help">
+                            PubMed、arXiv、その他の学術サイトのURLからDOIを自動検出して論文情報を取得します
+                        </div>
+                    </div>
+                    
+                    <div id="paper-loading" class="loading hidden">
+                        <i class="fas fa-spinner fa-spin"></i> 抽出中...
+                    </div>
+                </div>
+            </div>
+
+            <!-- Webサイトタブ -->
+            <div id="website-tab" class="tab-content">
+                <div class="url-section">
+                    <h2><i class="fas fa-link"></i> WebサイトURL入力</h2>
                     <div class="input-group">
-                        <input type="url" id="jstage-url" placeholder="J-STAGEのURLを入力してください">
-                        <button id="extract-paper" class="btn-primary">
+                        <input type="url" id="website-url" placeholder="WebサイトのURLを入力してください">
+                        <button id="extract-website" class="btn-primary">
                             <i class="fas fa-extract"></i> 抽出
                         </button>
                     </div>
                     <div class="input-help">
-                        例: https://www.jstage.jst.go.jp/article/journal/volume_issue/article_id
+                        AI補助機能が有効な場合、より正確な情報抽出が可能です
                     </div>
-                </div>
-                
-                <!-- DOI入力 -->
-                <div id="doi-input" class="input-method-content">
-                    <div class="input-group">
-                        <input type="text" id="doi-text" placeholder="DOIを入力してください（例: 10.1000/182）">
-                        <button id="extract-doi" class="btn-primary">
-                            <i class="fas fa-search"></i> 検索
-                        </button>
+                    <div id="website-loading" class="loading hidden">
+                        <i class="fas fa-spinner fa-spin"></i> 抽出中...
                     </div>
-                    <div class="input-help">
-                        DOI（Digital Object Identifier）から論文情報を自動取得します
-                    </div>
-                </div>
-                
-                <div id="paper-loading" class="loading hidden">
-                    <i class="fas fa-spinner fa-spin"></i> 抽出中...
                 </div>
             </div>
-        </div>
 
-        <!-- Webサイトタブ -->
-        <div id="website-tab" class="tab-content">
-            <div class="url-section">
-                <h2><i class="fas fa-link"></i> WebサイトURL入力</h2>
-                <div class="input-group">
-                    <input type="url" id="website-url" placeholder="WebサイトのURLを入力してください">
-                    <button id="extract-website" class="btn-primary">
-                        <i class="fas fa-extract"></i> 抽出
+            <!-- 結果表示 -->
+            <div id="result-section" class="result-section hidden">
+                <h2><i class="fas fa-clipboard-list"></i> 生成された引用文献</h2>
+                <div class="result-container">
+                    <div id="citation-result" class="citation-result"></div>
+                    <button id="copy-button" class="btn-secondary">
+                        <i class="fas fa-copy"></i> コピー
                     </button>
                 </div>
-                <div id="website-loading" class="loading hidden">
-                    <i class="fas fa-spinner fa-spin"></i> 抽出中...
+            </div>
+
+            <!-- エラー表示 -->
+            <div id="error-section" class="error-section hidden">
+                <div class="error-message">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span id="error-text"></span>
                 </div>
-            </div>
-        </div>
-
-        <!-- 結果表示 -->
-        <div id="result-section" class="result-section hidden">
-            <h2><i class="fas fa-clipboard-list"></i> 生成された引用文献</h2>
-            <div class="result-container">
-                <div id="citation-result" class="citation-result"></div>
-                <button id="copy-button" class="btn-secondary">
-                    <i class="fas fa-copy"></i> コピー
-                </button>
-            </div>
-        </div>
-
-        <!-- エラー表示 -->
-        <div id="error-section" class="error-section hidden">
-            <div class="error-message">
-                <i class="fas fa-exclamation-triangle"></i>
-                <span id="error-text"></span>
             </div>
         </div>
     </div>
+    
+    <!-- サイドバーオーバーレイ -->
+    <div id="sidebar-overlay" class="sidebar-overlay"></div>
 
     <script src="script.js"></script>
 </body>
