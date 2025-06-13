@@ -895,7 +895,8 @@ function parseCrossRefData(work, sourceInfo) {
         const authors = work.author ? work.author.map(author => {
             const given = author.given || '';
             const family = author.family || '';
-            return given ? `${family} ${given}` : family;
+            // 姓名の間にスペースを入れない
+            return given ? `${family}${given}` : family;
         }).join('・') : '著者不明';
 
         const title = work.title && work.title[0] ? work.title[0] : 'タイトル不明';
@@ -991,25 +992,36 @@ async function extractWebsiteInfoWithAI(url) {
     }
 
     try {
-        const prompt = `あなたはWebサイト情報抽出の専門家です。以下のURLにアクセスして、正確な情報を抽出してください。
+        const prompt = `あなたはWebサイト情報抽出の専門家です。以下のURLにアクセスして、メインコンテンツから正確な情報を抽出してください。
 
 URL: ${url}
 
-重要な注意事項：
-1. 実際のページ内容から情報を抽出してください
-2. ページタイトルは<title>タグの内容を優先してください
-3. サイト名は公式名称を使用してください
-4. メタデータが不正確な場合は、ページの実際の内容を確認してください
-5. 記事タイトルとサイト名を混同しないよう注意してください
+【重要な制約事項】
+1. 実際にページに記載されている情報のみを抽出してください
+2. 推測や想像で情報を補完してはいけません
+3. ハルシネーション（存在しない情報の生成）は絶対に避けてください
+
+【抽出ルール】
+- メインコンテンツのタイトルを抽出（サイドバーやおすすめ記事は除外）
+- ニュースサイトの場合：記事本文のタイトルを抽出（関連記事やおすすめ記事のタイトルは無視）
+- <title>タグ、<h1>タグ、メインコンテンツエリアを優先
+- サイト名は公式名称のみ（記事タイトルと混同しない）
+
+【除外すべき要素】
+- サイドバーの関連記事タイトル
+- おすすめ記事のタイトル
+- 広告のタイトル
+- ナビゲーションメニューのテキスト
+- フッターの情報
 
 以下の形式のJSONで返してください：
 {
-  "title": "正確なページタイトル（記事タイトルまたはページ名）",
-  "siteName": "正式なサイト名（組織名・会社名など）"
+  "title": "メインコンテンツの実際のタイトル",
+  "siteName": "実際のサイト名（組織名・会社名）"
 }
 
-情報が取得できない場合は、URLのドメイン名から推測してください。
-JSONのみを返し、説明文は不要です。`;
+情報が確認できない場合は、URLのドメイン名から推測してください。
+JSONのみを返し、説明や推測は一切含めないでください。`;
 
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`, {
             method: 'POST',
