@@ -439,23 +439,30 @@ async function extractJstageInfoWithAI(url) {
     }
 
     try {
-        const prompt = `以下のJ-STAGEのURLから論文情報を抽出してください。
+        const prompt = `あなたは学術論文の情報抽出の専門家です。以下のJ-STAGEのURLにアクセスして、正確な論文情報を抽出してください。
 
 URL: ${url}
 
-以下の情報をJSON形式で返してください：
+重要な注意事項：
+1. 実際のページ内容から情報を抽出してください
+2. メタデータが古い場合や不正確な場合があるので、ページの本文も確認してください
+3. 著者名は日本語表記を優先してください
+4. 論文タイトルは正確な日本語タイトルを抽出してください
+5. 雑誌名は正式名称を使用してください
+
+以下の形式のJSONで返してください：
 {
-  "authors": "著者名（複数の場合は・で区切り）",
-  "title": "論文タイトル",
-  "journal": "雑誌名",
-  "volume": "巻数",
-  "issue": "号数",
-  "pages": "ページ範囲",
-  "year": "発表年"
+  "authors": "著者名（複数の場合は・で区切り、例：田中太郎・佐藤花子）",
+  "title": "正確な論文タイトル",
+  "journal": "正式な雑誌名",
+  "volume": "巻数（数字のみ）",
+  "issue": "号数（数字のみ）",
+  "pages": "ページ範囲（例：45-50）",
+  "year": "発表年（4桁の西暦）"
 }
 
 情報が取得できない項目は空文字列 "" にしてください。
-JSONのみを返し、他の説明は不要です。`;
+JSONのみを返し、説明文は不要です。`;
 
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`, {
             method: 'POST',
@@ -515,53 +522,163 @@ function parsePartialInfo(text) {
     return info;
 }
 
-// HTMLからの論文情報解析
+// HTMLからの論文情報解析（改善版）
 function parsePaperInfoFromHtml(html, url) {
     try {
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
 
+        // より具体的なセレクタを使用
         const titleSelectors = [
-            'h1.title', '.article-title', '.paper-title', 'h1', 
-            '[class*="title"]', '#title', '.entry-title'
+            'h1.title', '.article-title', '.paper-title', 
+            '.main-title', '.content-title', '.entry-title',
+            'h1', 'h2.title', '[class*="title"]:not([class*="journal"])',
+            '#title', '.title:not(.journal-title)'
         ];
         
         const authorSelectors = [
-            '.authors', '.author', '.paper-authors', '[class*="author"]',
-            '.contributor', '.creator'
+            '.authors', '.author-list', '.paper-authors', 
+            '.author-names', '.contributor-list', '.creators',
+            '[class*="author"]:not([class*="journal"])', 
+            '.byline', '.author-info'
         ];
         
         const journalSelectors = [
-            '.journal-title', '.publication-title', '.journal', 
-            '[class*="journal"]', '.source'
+            '.journal-title', '.publication-title', '.journal-name',
+            '.source-title', '.container-title', '.journal',
+            '[class*="journal"][class*="title"]', '.source'
         ];
 
-        const title = findTextFromSelectors(doc, titleSelectors) || 'タイトル不明';
-        const authors = findTextFromSelectors(doc, authorSelectors) || '著者不明';
-        const journal = findTextFromSelectors(doc, journalSelectors) || '雑誌名不明';
+        // 実際のコンテンツから抽出
+        const contentTitle = findTextFromSelectors(doc, titleSelectors);
+        const contentAuthors = findTextFromSelectors(doc, authorSelectors);
+        const contentJournal = findTextFromSelectors(doc, journalSelectors);
         
-        // メタデータからの情報取得
-        const metaTitle = doc.querySelector('meta[name="citation_title"]')?.getAttribute('content');
-        const metaAuthors = doc.querySelector('meta[name="citation_author"]')?.getAttribute('content');
-        const metaJournal = doc.querySelector('meta[name="citation_journal_title"]')?.getAttribute('content');
-        const metaVolume = doc.querySelector('meta[name="citation_volume"]')?.getAttribute('content');
-        const metaIssue = doc.querySelector('meta[name="citation_issue"]')?.getAttribute('content');
-        const metaPages = doc.querySelector('meta[name="citation_firstpage"]')?.getAttribute('content');
-        const metaYear = doc.querySelector('meta[name="citation_publication_date"]')?.getAttribute('content');
+        // 複数のメタデータソースを確認（優先順位付き）
+        const metaSources = [
+            // 学術論文用メタデータ（最優先）
+            {
+                title: doc.querySelector('meta[name="citation_title"]')?.getAttribute('content'),
+                authors: doc.querySelector('meta[name="citation_author"]')?.getAttribute('content'),
+                journal: doc.querySelector('meta[name="citation_journal_title"]')?.getAttribute('content'),
+                volume: doc.querySelector('meta[name="citation_volume"]')?.getAttribute('content'),
+                issue: doc.querySelector('meta[name="citation_issue"]')?.getAttribute('content'),
+                pages: doc.querySelector('meta[name="citation_firstpage"]')?.getAttribute('content'),
+                year: doc.querySelector('meta[name="citation_publication_date"]')?.getAttribute('content')
+            },
+            // Dublin Core メタデータ
+            {
+                title: doc.querySelector('meta[name="DC.title"]')?.getAttribute('content'),
+                authors: doc.querySelector('meta[name="DC.creator"]')?.getAttribute('content'),
+                journal: doc.querySelector('meta[name="DC.source"]')?.getAttribute('content'),
+                year: doc.querySelector('meta[name="DC.date"]')?.getAttribute('content')
+            },
+            // Open Graph メタデータ
+            {
+                title: doc.querySelector('meta[property="og:title"]')?.getAttribute('content'),
+                journal: doc.querySelector('meta[property="og:site_name"]')?.getAttribute('content')
+            }
+        ];
+
+        // 最も信頼できる情報を選択
+        let bestMeta = metaSources[0]; // citation_* を最優先
+        
+        // メタデータの検証と選択
+        for (const meta of metaSources) {
+            if (meta.title && meta.title.length > 10 && !meta.title.includes('PDF')) {
+                bestMeta = meta;
+                break;
+            }
+        }
+
+        // 年の抽出を改善
+        let extractedYear = '';
+        if (bestMeta.year) {
+            const yearMatch = bestMeta.year.match(/(\d{4})/);
+            extractedYear = yearMatch ? yearMatch[1] : '';
+        }
+        if (!extractedYear) {
+            const urlYearMatch = url.match(/(\d{4})/);
+            extractedYear = urlYearMatch ? urlYearMatch[1] : '';
+        }
+
+        // 著者名の処理を改善
+        let processedAuthors = bestMeta.authors || contentAuthors || '著者不明';
+        if (processedAuthors !== '著者不明') {
+            // 複数著者の区切り文字を統一
+            processedAuthors = processedAuthors
+                .replace(/,\s*/g, '・')
+                .replace(/;\s*/g, '・')
+                .replace(/\s+and\s+/g, '・')
+                .replace(/\s*・\s*/g, '・');
+        }
 
         return {
-            title: metaTitle || title,
-            authors: metaAuthors || authors.replace(/,/g, '・'),
-            journal: metaJournal || journal,
-            volume: metaVolume || '',
-            issue: metaIssue || '',
-            pages: metaPages || '',
-            year: metaYear?.match(/\d{4}/)?.[0] || url.match(/\d{4}/)?.[0] || ''
+            title: bestMeta.title || contentTitle || 'タイトル不明',
+            authors: processedAuthors,
+            journal: bestMeta.journal || contentJournal || '雑誌名不明',
+            volume: bestMeta.volume || '',
+            issue: bestMeta.issue || '',
+            pages: bestMeta.pages || '',
+            year: extractedYear
         };
         
     } catch (error) {
         console.error('HTML parsing error:', error);
         return {};
+    }
+}
+// Webサイト情報解析（改善版）
+function parseWebsiteInfo(html, url) {
+    try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+
+        // より正確なタイトル抽出
+        const titleSources = [
+            doc.querySelector('title')?.textContent?.trim(),
+            doc.querySelector('meta[property="og:title"]')?.getAttribute('content'),
+            doc.querySelector('meta[name="twitter:title"]')?.getAttribute('content'),
+            doc.querySelector('h1')?.textContent?.trim(),
+            doc.querySelector('.page-title')?.textContent?.trim(),
+            doc.querySelector('.entry-title')?.textContent?.trim()
+        ];
+
+        // より正確なサイト名抽出
+        const siteNameSources = [
+            doc.querySelector('meta[property="og:site_name"]')?.getAttribute('content'),
+            doc.querySelector('meta[name="application-name"]')?.getAttribute('content'),
+            doc.querySelector('meta[name="site_name"]')?.getAttribute('content'),
+            doc.querySelector('.site-title')?.textContent?.trim(),
+            doc.querySelector('.brand')?.textContent?.trim(),
+            doc.querySelector('.logo')?.textContent?.trim()
+        ];
+
+        // 最適なタイトルを選択（短すぎるものや一般的すぎるものを除外）
+        let pageTitle = 'ページタイトル不明';
+        for (const title of titleSources) {
+            if (title && title.length > 5 && title.length < 200 && 
+                !title.includes('404') && !title.includes('Error')) {
+                pageTitle = title;
+                break;
+            }
+        }
+
+        // 最適なサイト名を選択
+        let siteName = getDomainName(url);
+        for (const name of siteNameSources) {
+            if (name && name.length > 2 && name.length < 100 && 
+                name !== pageTitle) {
+                siteName = name;
+                break;
+            }
+        }
+
+        const currentDate = getCurrentDateString();
+        generateWebsiteCitation(pageTitle, siteName, url, currentDate);
+    } catch (error) {
+        showError('Webサイト情報の解析中にエラーが発生しました。');
+        console.error('Website parsing error:', error);
     }
 }
 
@@ -868,18 +985,25 @@ async function extractWebsiteInfoWithAI(url) {
     }
 
     try {
-        const prompt = `以下のWebサイトURLから情報を抽出してください。
+        const prompt = `あなたはWebサイト情報抽出の専門家です。以下のURLにアクセスして、正確な情報を抽出してください。
 
 URL: ${url}
 
-以下の情報をJSON形式で返してください：
+重要な注意事項：
+1. 実際のページ内容から情報を抽出してください
+2. ページタイトルは<title>タグの内容を優先してください
+3. サイト名は公式名称を使用してください
+4. メタデータが不正確な場合は、ページの実際の内容を確認してください
+5. 記事タイトルとサイト名を混同しないよう注意してください
+
+以下の形式のJSONで返してください：
 {
-  "title": "ページタイトル",
-  "siteName": "サイト名またはドメイン名"
+  "title": "正確なページタイトル（記事タイトルまたはページ名）",
+  "siteName": "正式なサイト名（組織名・会社名など）"
 }
 
-URLにアクセスできない場合は、URLから推測できる情報を返してください。
-JSONのみを返し、他の説明は不要です。`;
+情報が取得できない場合は、URLのドメイン名から推測してください。
+JSONのみを返し、説明文は不要です。`;
 
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`, {
             method: 'POST',
