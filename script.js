@@ -1,27 +1,296 @@
-} else if (work['published-online'] && work['published-online']['date-parts'] && work['published-online']['date-parts'][0]) {
-            year = work['published-online']['date-parts'][0][0].toString();
-        } else {
-            year = '発表年不明';
-        }
+// グローバル変数
+let selectedBook = null;
+let geminiApiKey = '';
+let aiAssistEnabled = false;
 
-        // DOI情報を含めて手動フォームを表示
-        const prefilledData = {
-            authors: authors,
-            title: title,
-            journal: journal,
-            volume: volume,
-            issue: issue,
-            pages: pages,
-            year: year,
-            doi: work.DOI
-        };
+// DOM要素の取得
+const tabButtons = document.querySelectorAll('.tab-button');
+const tabContents = document.querySelectorAll('.tab-content');
+const searchButton = document.getElementById('search-button');
+const bookSearchInput = document.getElementById('book-search');
+const searchTypeSelect = document.getElementById('search-type');
+const searchResults = document.getElementById('search-results');
+const loading = document.getElementById('loading');
+const jstageUrlInput = document.getElementById('jstage-url');
+const extractPaperButton = document.getElementById('extract-paper');
+const doiTextInput = document.getElementById('doi-text');
+const extractDoiButton = document.getElementById('extract-doi');
+const urlDoiTextInput = document.getElementById('url-doi-text');
+const extractUrlDoiButton = document.getElementById('extract-url-doi');
+const methodTabs = document.querySelectorAll('.method-tab');
+const methodContents = document.querySelectorAll('.input-method-content');
+const paperLoading = document.getElementById('paper-loading');
+const websiteUrlInput = document.getElementById('website-url');
+const extractWebsiteButton = document.getElementById('extract-website');
+const websiteLoading = document.getElementById('website-loading');
+const resultSection = document.getElementById('result-section');
+const citationResult = document.getElementById('citation-result');
+const copyButton = document.getElementById('copy-button');
+const errorSection = document.getElementById('error-section');
+const errorText = document.getElementById('error-text');
 
-        showManualPaperForm(sourceInfo, prefilledData);
-        
-    } catch (error) {
-        showError('論文情報の解析中にエラーが発生しました。');
-        console.error('CrossRef data parsing error:', error);
+// サイドバー関連
+const sidebar = document.getElementById('sidebar');
+const sidebarToggle = document.getElementById('sidebar-toggle');
+const sidebarClose = document.getElementById('sidebar-close');
+const sidebarOverlay = document.getElementById('sidebar-overlay');
+const geminiApiKeyInput = document.getElementById('gemini-api-key');
+const toggleApiKeyButton = document.getElementById('toggle-api-key');
+const enableAiAssistCheckbox = document.getElementById('enable-ai-assist');
+const apiStatus = document.getElementById('api-status');
+
+// 初期化
+document.addEventListener('DOMContentLoaded', function() {
+    setupEventListeners();
+    loadSettings();
+});
+
+// イベントリスナーの設定
+function setupEventListeners() {
+    // タブ切り替え
+    tabButtons.forEach(button => {
+        button.addEventListener('click', () => switchTab(button.dataset.tab));
+    });
+
+    // 論文入力方法の切り替え
+    methodTabs.forEach(tab => {
+        tab.addEventListener('click', () => switchInputMethod(tab.dataset.method));
+    });
+
+    // 書籍検索
+    searchButton.addEventListener('click', searchBooks);
+    bookSearchInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') searchBooks();
+    });
+
+    // 論文抽出
+    extractPaperButton.addEventListener('click', extractPaper);
+    jstageUrlInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') extractPaper();
+    });
+
+    // DOI抽出
+    extractDoiButton.addEventListener('click', extractFromDOI);
+    doiTextInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') extractFromDOI();
+    });
+
+    // URL (DOI含む)抽出
+    extractUrlDoiButton.addEventListener('click', extractFromUrlDoi);
+    urlDoiTextInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') extractFromUrlDoi();
+    });
+
+    // Webサイト抽出
+    extractWebsiteButton.addEventListener('click', extractWebsite);
+    websiteUrlInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') extractWebsite();
+    });
+
+    // コピーボタン
+    copyButton.addEventListener('click', copyCitation);
+
+    // サイドバー関連
+    sidebarToggle.addEventListener('click', openSidebar);
+    sidebarClose.addEventListener('click', closeSidebar);
+    sidebarOverlay.addEventListener('click', closeSidebar);
+    
+    // API設定関連
+    toggleApiKeyButton.addEventListener('click', toggleApiKeyVisibility);
+    geminiApiKeyInput.addEventListener('input', updateApiKey);
+    enableAiAssistCheckbox.addEventListener('change', toggleAiAssist);
+}
+
+// 設定の読み込み
+function loadSettings() {
+    const savedApiKey = localStorage.getItem('gemini-api-key');
+    const savedAiAssist = localStorage.getItem('ai-assist-enabled') === 'true';
+    
+    if (savedApiKey) {
+        geminiApiKeyInput.value = savedApiKey;
+        geminiApiKey = savedApiKey;
     }
+    
+    enableAiAssistCheckbox.checked = savedAiAssist;
+    aiAssistEnabled = savedAiAssist;
+    
+    updateApiStatus();
+}
+
+// サイドバー開閉
+function openSidebar() {
+    sidebar.classList.add('open');
+    sidebarOverlay.classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeSidebar() {
+    sidebar.classList.remove('open');
+    sidebarOverlay.classList.remove('active');
+    document.body.style.overflow = '';
+}
+
+// APIキー表示切り替え
+function toggleApiKeyVisibility() {
+    const input = geminiApiKeyInput;
+    const icon = toggleApiKeyButton.querySelector('i');
+    
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.className = 'fas fa-eye-slash';
+    } else {
+        input.type = 'password';
+        icon.className = 'fas fa-eye';
+    }
+}
+
+// APIキー更新
+function updateApiKey() {
+    geminiApiKey = geminiApiKeyInput.value.trim();
+    localStorage.setItem('gemini-api-key', geminiApiKey);
+    updateApiStatus();
+}
+
+// AI補助機能切り替え
+function toggleAiAssist() {
+    aiAssistEnabled = enableAiAssistCheckbox.checked && geminiApiKey.length > 0;
+    localStorage.setItem('ai-assist-enabled', aiAssistEnabled.toString());
+    updateApiStatus();
+}
+
+// APIステータス更新
+function updateApiStatus() {
+    const statusIcon = apiStatus.querySelector('i');
+    const statusText = apiStatus.querySelector('span');
+    
+    if (aiAssistEnabled && geminiApiKey.length > 0) {
+        statusIcon.className = 'fas fa-circle status-active';
+        statusText.textContent = '有効';
+    } else {
+        statusIcon.className = 'fas fa-circle status-inactive';
+        statusText.textContent = '無効';
+    }
+}
+
+// タブ切り替え
+function switchTab(tabName) {
+    // 全てのタブボタンとコンテンツを非アクティブに
+    tabButtons.forEach(btn => btn.classList.remove('active'));
+    tabContents.forEach(content => content.classList.remove('active'));
+
+    // 選択されたタブを アクティブに
+    document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+    document.getElementById(`${tabName}-tab`).classList.add('active');
+
+    // 結果とエラーを隠す
+    hideResults();
+}
+
+// 論文入力方法の切り替え
+function switchInputMethod(method) {
+    // 全ての入力方法タブを非アクティブに
+    methodTabs.forEach(tab => tab.classList.remove('active'));
+    methodContents.forEach(content => content.classList.remove('active'));
+
+    // 選択された入力方法をアクティブに
+    document.querySelector(`[data-method="${method}"]`).classList.add('active');
+    document.getElementById(`${method}-input`).classList.add('active');
+
+    // 結果とエラーを隠す
+    hideResults();
+}
+
+// 書籍検索（TOP5制限追加）
+async function searchBooks() {
+    const query = bookSearchInput.value.trim();
+    const searchType = searchTypeSelect.value;
+
+    if (!query) {
+        showError('検索キーワードを入力してください。');
+        return;
+    }
+
+    hideResults();
+    showLoading(loading);
+
+    try {
+        // Google Books APIを使用（TOP5に制限）
+        const apiUrl = searchType === 'isbn' 
+            ? `https://www.googleapis.com/books/v1/volumes?q=isbn:${encodeURIComponent(query)}&langRestrict=ja&maxResults=5`
+            : `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&langRestrict=ja&maxResults=5`;
+
+        const response = await fetch(apiUrl);
+        const data = await response.json();
+
+        hideLoading(loading);
+
+        if (data.items && data.items.length > 0) {
+            displaySearchResults(data.items);
+        } else {
+            showError('書籍が見つかりませんでした。検索キーワードを変更してお試しください。');
+        }
+    } catch (error) {
+        hideLoading(loading);
+        showError('検索中にエラーが発生しました。インターネット接続を確認してください。');
+        console.error('Book search error:', error);
+    }
+}
+
+// 検索結果表示
+function displaySearchResults(books) {
+    searchResults.innerHTML = '';
+    
+    books.forEach((book, index) => {
+        const volumeInfo = book.volumeInfo;
+        const authors = volumeInfo.authors ? volumeInfo.authors.join(', ') : '著者不明';
+        const title = volumeInfo.title || 'タイトル不明';
+        const publisher = volumeInfo.publisher || '出版社不明';
+        const publishedDate = volumeInfo.publishedDate || '発行年不明';
+        const isbn = volumeInfo.industryIdentifiers 
+            ? volumeInfo.industryIdentifiers.find(id => id.type === 'ISBN_13' || id.type === 'ISBN_10')?.identifier || 'ISBN不明'
+            : 'ISBN不明';
+
+        const resultItem = document.createElement('div');
+        resultItem.className = 'search-item';
+        resultItem.innerHTML = `
+            <h3>${title}</h3>
+            <p><strong>著者:</strong> ${authors}</p>
+            <p><strong>出版社:</strong> ${publisher}</p>
+            <p><strong>発行年:</strong> ${publishedDate}</p>
+            <p><strong>ISBN:</strong> <span class="isbn">${isbn}</span></p>
+        `;
+
+        resultItem.addEventListener('click', () => selectBook(book, resultItem));
+        searchResults.appendChild(resultItem);
+    });
+}
+
+// 書籍選択
+function selectBook(book, element) {
+    // 既存の選択を解除
+    document.querySelectorAll('.search-item').forEach(item => {
+        item.classList.remove('selected');
+    });
+
+    // 新しい選択を設定
+    element.classList.add('selected');
+    selectedBook = book;
+
+    // 引用文献を生成
+    generateBookCitation(book);
+}
+
+// 書籍引用文献生成
+function generateBookCitation(book) {
+    const volumeInfo = book.volumeInfo;
+    const authors = volumeInfo.authors ? volumeInfo.authors.join(', ') : '著者不明';
+    const title = volumeInfo.title || 'タイトル不明';
+    const publisher = volumeInfo.publisher || '出版社不明';
+    const publishedDate = volumeInfo.publishedDate ? volumeInfo.publishedDate.split('-')[0] : '発行年不明';
+
+    const citation = `${authors}(${publishedDate}), ${title}, ${publisher}`;
+    
+    showResult(citation);
 }
 
 // 論文抽出（J-STAGE強化）
@@ -282,6 +551,237 @@ function extractPaperInfoFromUrl(url) {
         return {};
     } catch (error) {
         return {};
+    }
+}
+
+// URLからDOI抽出
+function extractDoiFromUrl(url) {
+    // 様々なパターンのDOI URLに対応
+    const doiPatterns = [
+        /doi\.org\/(.*)$/,
+        /dx\.doi\.org\/(.*)$/,
+        /doi:(.*)$/,
+        /DOI:(.*)$/,
+        /\/doi\/(.*)$/,
+        /doi=(.*)$/,
+        /doi\/full\/(.*)$/,
+        /doi\/abs\/(.*)$/
+    ];
+    
+    for (const pattern of doiPatterns) {
+        const match = url.match(pattern);
+        if (match) {
+            let doi = match[1];
+            // URLエンコードされたDOIをデコード
+            doi = decodeURIComponent(doi);
+            // 余分な文字を削除
+            doi = doi.replace(/[?&#].*$/, '');
+            // DOI形式の検証
+            if (/^10\.\d{4,}\/\S+$/.test(doi)) {
+                return doi;
+            }
+        }
+    }
+    
+    return null;
+}
+
+// URL (DOI含む)から抽出
+async function extractFromUrlDoi() {
+    const url = urlDoiTextInput.value.trim();
+
+    if (!url) {
+        showError('URLを入力してください。');
+        return;
+    }
+
+    // URLの妥当性チェック
+    try {
+        new URL(url);
+    } catch {
+        showError('有効なURLを入力してください。');
+        return;
+    }
+
+    hideResults();
+    showLoading(paperLoading);
+
+    try {
+        // URLからDOIを抽出
+        const extractedDoi = extractDoiFromUrl(url);
+        
+        if (extractedDoi) {
+            hideLoading(paperLoading);
+            // DOIが見つかった場合、CrossRef APIで検索
+            await extractFromDOIInternal(extractedDoi, `URL: ${url}`);
+        } else if (aiAssistEnabled) {
+            // AI補助機能でDOI抽出を試行
+            const aiExtractedDoi = await extractDoiWithAI(url);
+            hideLoading(paperLoading);
+            
+            if (aiExtractedDoi) {
+                await extractFromDOIInternal(aiExtractedDoi, `URL (AI抽出): ${url}`);
+            } else {
+                showError('URLからDOIを見つけることができませんでした。DOIが含まれるURLであることを確認してください。');
+            }
+        } else {
+            hideLoading(paperLoading);
+            showError('URLからDOIを見つけることができませんでした。AI補助機能を有効にするとより正確な抽出が可能です。');
+        }
+    } catch (error) {
+        hideLoading(paperLoading);
+        showError('URL処理中にエラーが発生しました。');
+        console.error('URL DOI extraction error:', error);
+    }
+}
+
+// DOIから論文情報を抽出
+async function extractFromDOI() {
+    const doiText = doiTextInput.value.trim();
+
+    if (!doiText) {
+        showError('DOIを入力してください。');
+        return;
+    }
+
+    // DOIの形式チェック
+    const doiPattern = /^10\.\d{4,}\/\S+$/;
+    if (!doiPattern.test(doiText)) {
+        showError('正しいDOI形式を入力してください（例: 10.1000/182）。');
+        return;
+    }
+
+    hideResults();
+    showLoading(paperLoading);
+
+    await extractFromDOIInternal(doiText, `DOI: ${doiText}`);
+}
+
+// DOI抽出の内部処理
+async function extractFromDOIInternal(doi, sourceInfo) {
+    try {
+        // CrossRef APIを使用してDOI情報を取得
+        const crossRefUrl = `https://api.crossref.org/works/${encodeURIComponent(doi)}`;
+        
+        const response = await fetch(crossRefUrl, {
+            headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'CitationGenerator/1.0 (mailto:example@email.com)'
+            }
+        });
+
+        hideLoading(paperLoading);
+
+        if (response.ok) {
+            const data = await response.json();
+            if (data.status === 'ok' && data.message) {
+                parseCrossRefData(data.message, sourceInfo);
+            } else {
+                showError('DOIから論文情報を取得できませんでした。DOIを確認してください。');
+            }
+        } else if (response.status === 404) {
+            showError('指定されたDOIは見つかりませんでした。DOIを確認してください。');
+        } else {
+            showError('DOI検索中にエラーが発生しました。しばらく時間をおいてお試しください。');
+        }
+    } catch (error) {
+        hideLoading(paperLoading);
+        showError('DOI検索中にネットワークエラーが発生しました。インターネット接続を確認してください。');
+        console.error('DOI extraction error:', error);
+    }
+}
+
+// AI補助機能でDOI抽出
+async function extractDoiWithAI(url) {
+    if (!aiAssistEnabled || !geminiApiKey) {
+        return null;
+    }
+
+    try {
+        const prompt = `以下のURLからDOI（Digital Object Identifier）を抽出してください。DOIは "10." で始まる形式です。
+
+URL: ${url}
+
+DOIが見つかった場合は、DOIのみを返してください（例: 10.1000/182）。
+DOIが見つからない場合は "NOT_FOUND" と返してください。`;
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                contents: [{
+                    parts: [{ text: prompt }]
+                }]
+            })
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+            
+            if (text && text !== 'NOT_FOUND' && /^10\.\d{4,}\/\S+$/.test(text)) {
+                return text;
+            }
+        }
+    } catch (error) {
+        console.error('AI DOI extraction error:', error);
+    }
+    
+    return null;
+}
+
+// CrossRefからの論文データを解析
+function parseCrossRefData(work, sourceInfo) {
+    try {
+        // 著者情報の抽出（「・」区切りに変更）
+        const authors = work.author ? work.author.map(author => {
+            const given = author.given || '';
+            const family = author.family || '';
+            return given ? `${family} ${given}` : family;
+        }).join('・') : '著者不明';
+
+        // タイトルの抽出
+        const title = work.title && work.title[0] ? work.title[0] : 'タイトル不明';
+
+        // 雑誌名の抽出
+        const journal = work['container-title'] && work['container-title'][0] 
+            ? work['container-title'][0] 
+            : '雑誌名不明';
+
+        // 巻・号・ページの抽出
+        const volume = work.volume || '';
+        const issue = work.issue || '';
+        const pages = work.page || '';
+
+        // 発行年の抽出
+        let year = '';
+        if (work.published && work.published['date-parts'] && work.published['date-parts'][0]) {
+            year = work.published['date-parts'][0][0].toString();
+        } else if (work['published-online'] && work['published-online']['date-parts'] && work['published-online']['date-parts'][0]) {
+            year = work['published-online']['date-parts'][0][0].toString();
+        } else {
+            year = '発表年不明';
+        }
+
+        // DOI情報を含めて手動フォームを表示
+        const prefilledData = {
+            authors: authors,
+            title: title,
+            journal: journal,
+            volume: volume,
+            issue: issue,
+            pages: pages,
+            year: year,
+            doi: work.DOI
+        };
+
+        showManualPaperForm(sourceInfo, prefilledData);
+        
+    } catch (error) {
+        showError('論文情報の解析中にエラーが発生しました。');
+        console.error('CrossRef data parsing error:', error);
     }
 }
 
@@ -728,6 +1228,16 @@ function generateManualCitation() {
     document.querySelector('.manual-form').remove();
 }
 
+// ローディング表示
+function showLoading(element) {
+    element.classList.remove('hidden');
+}
+
+// ローディング非表示
+function hideLoading(element) {
+    element.classList.add('hidden');
+}
+
 // 結果表示
 function showResult(citation) {
     citationResult.textContent = citation;
@@ -745,504 +1255,24 @@ function showError(message) {
 // 結果とエラーを隠す
 function hideResults() {
     resultSection.classList.add('hidden');
-    errorSection.classList.// グローバル変数
-let selectedBook = null;
-let geminiApiKey = '';
-let aiAssistEnabled = false;
-
-// DOM要素の取得
-const tabButtons = document.querySelectorAll('.tab-button');
-const tabContents = document.querySelectorAll('.tab-content');
-const searchButton = document.getElementById('search-button');
-const bookSearchInput = document.getElementById('book-search');
-const searchTypeSelect = document.getElementById('search-type');
-const searchResults = document.getElementById('search-results');
-const loading = document.getElementById('loading');
-const jstageUrlInput = document.getElementById('jstage-url');
-const extractPaperButton = document.getElementById('extract-paper');
-const doiTextInput = document.getElementById('doi-text');
-const extractDoiButton = document.getElementById('extract-doi');
-const urlDoiTextInput = document.getElementById('url-doi-text');
-const extractUrlDoiButton = document.getElementById('extract-url-doi');
-const methodTabs = document.querySelectorAll('.method-tab');
-const methodContents = document.querySelectorAll('.input-method-content');
-const paperLoading = document.getElementById('paper-loading');
-const websiteUrlInput = document.getElementById('website-url');
-const extractWebsiteButton = document.getElementById('extract-website');
-const websiteLoading = document.getElementById('website-loading');
-const resultSection = document.getElementById('result-section');
-const citationResult = document.getElementById('citation-result');
-const copyButton = document.getElementById('copy-button');
-const errorSection = document.getElementById('error-section');
-const errorText = document.getElementById('error-text');
-
-// サイドバー関連
-const sidebar = document.getElementById('sidebar');
-const sidebarToggle = document.getElementById('sidebar-toggle');
-const sidebarClose = document.getElementById('sidebar-close');
-const sidebarOverlay = document.getElementById('sidebar-overlay');
-const geminiApiKeyInput = document.getElementById('gemini-api-key');
-const toggleApiKeyButton = document.getElementById('toggle-api-key');
-const enableAiAssistCheckbox = document.getElementById('enable-ai-assist');
-const apiStatus = document.getElementById('api-status');
-
-// 初期化
-document.addEventListener('DOMContentLoaded', function() {
-    setupEventListeners();
-    loadSettings();
-});
-
-// イベントリスナーの設定
-function setupEventListeners() {
-    // タブ切り替え
-    tabButtons.forEach(button => {
-        button.addEventListener('click', () => switchTab(button.dataset.tab));
-    });
-
-    // 論文入力方法の切り替え
-    methodTabs.forEach(tab => {
-        tab.addEventListener('click', () => switchInputMethod(tab.dataset.method));
-    });
-
-    // 書籍検索
-    searchButton.addEventListener('click', searchBooks);
-    bookSearchInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') searchBooks();
-    });
-
-    // 論文抽出
-    extractPaperButton.addEventListener('click', extractPaper);
-    jstageUrlInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') extractPaper();
-    });
-
-    // DOI抽出
-    extractDoiButton.addEventListener('click', extractFromDOI);
-    doiTextInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') extractFromDOI();
-    });
-
-    // URL (DOI含む)抽出
-    extractUrlDoiButton.addEventListener('click', extractFromUrlDoi);
-    urlDoiTextInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') extractFromUrlDoi();
-    });
-
-    // Webサイト抽出
-    extractWebsiteButton.addEventListener('click', extractWebsite);
-    websiteUrlInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') extractWebsite();
-    });
-
-    // コピーボタン
-    copyButton.addEventListener('click', copyCitation);
-
-    // サイドバー関連
-    sidebarToggle.addEventListener('click', openSidebar);
-    sidebarClose.addEventListener('click', closeSidebar);
-    sidebarOverlay.addEventListener('click', closeSidebar);
-    
-    // API設定関連
-    toggleApiKeyButton.addEventListener('click', toggleApiKeyVisibility);
-    geminiApiKeyInput.addEventListener('input', updateApiKey);
-    enableAiAssistCheckbox.addEventListener('change', toggleAiAssist);
+    errorSection.classList.add('hidden');
 }
 
-// 設定の読み込み
-function loadSettings() {
-    const savedApiKey = localStorage.getItem('gemini-api-key');
-    const savedAiAssist = localStorage.getItem('ai-assist-enabled') === 'true';
-    
-    if (savedApiKey) {
-        geminiApiKeyInput.value = savedApiKey;
-        geminiApiKey = savedApiKey;
-    }
-    
-    enableAiAssistCheckbox.checked = savedAiAssist;
-    aiAssistEnabled = savedAiAssist;
-    
-    updateApiStatus();
-}
-
-// サイドバー開閉
-function openSidebar() {
-    sidebar.classList.add('open');
-    sidebarOverlay.classList.add('active');
-    document.body.style.overflow = 'hidden';
-}
-
-function closeSidebar() {
-    sidebar.classList.remove('open');
-    sidebarOverlay.classList.remove('active');
-    document.body.style.overflow = '';
-}
-
-// APIキー表示切り替え
-function toggleApiKeyVisibility() {
-    const input = geminiApiKeyInput;
-    const icon = toggleApiKeyButton.querySelector('i');
-    
-    if (input.type === 'password') {
-        input.type = 'text';
-        icon.className = 'fas fa-eye-slash';
-    } else {
-        input.type = 'password';
-        icon.className = 'fas fa-eye';
-    }
-}
-
-// APIキー更新
-function updateApiKey() {
-    geminiApiKey = geminiApiKeyInput.value.trim();
-    localStorage.setItem('gemini-api-key', geminiApiKey);
-    updateApiStatus();
-}
-
-// AI補助機能切り替え
-function toggleAiAssist() {
-    aiAssistEnabled = enableAiAssistCheckbox.checked && geminiApiKey.length > 0;
-    localStorage.setItem('ai-assist-enabled', aiAssistEnabled.toString());
-    updateApiStatus();
-}
-
-// APIステータス更新
-function updateApiStatus() {
-    const statusIcon = apiStatus.querySelector('i');
-    const statusText = apiStatus.querySelector('span');
-    
-    if (aiAssistEnabled && geminiApiKey.length > 0) {
-        statusIcon.className = 'fas fa-circle status-active';
-        statusText.textContent = '有効';
-    } else {
-        statusIcon.className = 'fas fa-circle status-inactive';
-        statusText.textContent = '無効';
-    }
-}
-
-// タブ切り替え
-function switchTab(tabName) {
-    // 全てのタブボタンとコンテンツを非アクティブに
-    tabButtons.forEach(btn => btn.classList.remove('active'));
-    tabContents.forEach(content => content.classList.remove('active'));
-
-    // 選択されたタブを アクティブに
-    document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
-    document.getElementById(`${tabName}-tab`).classList.add('active');
-
-    // 結果とエラーを隠す
-    hideResults();
-}
-
-// 論文入力方法の切り替え
-function switchInputMethod(method) {
-    // 全ての入力方法タブを非アクティブに
-    methodTabs.forEach(tab => tab.classList.remove('active'));
-    methodContents.forEach(content => content.classList.remove('active'));
-
-    // 選択された入力方法をアクティブに
-    document.querySelector(`[data-method="${method}"]`).classList.add('active');
-    document.getElementById(`${method}-input`).classList.add('active');
-
-    // 結果とエラーを隠す
-    hideResults();
-}
-
-// 書籍検索（TOP5制限追加）
-async function searchBooks() {
-    const query = bookSearchInput.value.trim();
-    const searchType = searchTypeSelect.value;
-
-    if (!query) {
-        showError('検索キーワードを入力してください。');
-        return;
-    }
-
-    hideResults();
-    showLoading(loading);
-
-    try {
-        // Google Books APIを使用（TOP5に制限）
-        const apiUrl = searchType === 'isbn' 
-            ? `https://www.googleapis.com/books/v1/volumes?q=isbn:${encodeURIComponent(query)}&langRestrict=ja&maxResults=5`
-            : `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&langRestrict=ja&maxResults=5`;
-
-        const response = await fetch(apiUrl);
-        const data = await response.json();
-
-        hideLoading(loading);
-
-        if (data.items && data.items.length > 0) {
-            displaySearchResults(data.items);
-        } else {
-            showError('書籍が見つかりませんでした。検索キーワードを変更してお試しください。');
-        }
-    } catch (error) {
-        hideLoading(loading);
-        showError('検索中にエラーが発生しました。インターネット接続を確認してください。');
-        console.error('Book search error:', error);
-    }
-}
-
-// 検索結果表示
-function displaySearchResults(books) {
-    searchResults.innerHTML = '';
-    
-    books.forEach((book, index) => {
-        const volumeInfo = book.volumeInfo;
-        const authors = volumeInfo.authors ? volumeInfo.authors.join(', ') : '著者不明';
-        const title = volumeInfo.title || 'タイトル不明';
-        const publisher = volumeInfo.publisher || '出版社不明';
-        const publishedDate = volumeInfo.publishedDate || '発行年不明';
-        const isbn = volumeInfo.industryIdentifiers 
-            ? volumeInfo.industryIdentifiers.find(id => id.type === 'ISBN_13' || id.type === 'ISBN_10')?.identifier || 'ISBN不明'
-            : 'ISBN不明';
-
-        const resultItem = document.createElement('div');
-        resultItem.className = 'search-item';
-        resultItem.innerHTML = `
-            <h3>${title}</h3>
-            <p><strong>著者:</strong> ${authors}</p>
-            <p><strong>出版社:</strong> ${publisher}</p>
-            <p><strong>発行年:</strong> ${publishedDate}</p>
-            <p><strong>ISBN:</strong> <span class="isbn">${isbn}</span></p>
-        `;
-
-        resultItem.addEventListener('click', () => selectBook(book, resultItem));
-        searchResults.appendChild(resultItem);
-    });
-}
-
-// 書籍選択
-function selectBook(book, element) {
-    // 既存の選択を解除
-    document.querySelectorAll('.search-item').forEach(item => {
-        item.classList.remove('selected');
-    });
-
-    // 新しい選択を設定
-    element.classList.add('selected');
-    selectedBook = book;
-
-    // 引用文献を生成
-    generateBookCitation(book);
-}
-
-// 書籍引用文献生成
-function generateBookCitation(book) {
-    const volumeInfo = book.volumeInfo;
-    const authors = volumeInfo.authors ? volumeInfo.authors.join(', ') : '著者不明';
-    const title = volumeInfo.title || 'タイトル不明';
-    const publisher = volumeInfo.publisher || '出版社不明';
-    const publishedDate = volumeInfo.publishedDate ? volumeInfo.publishedDate.split('-')[0] : '発行年不明';
-
-    const citation = `${authors}(${publishedDate}), ${title}, ${publisher}`;
-    
-    showResult(citation);
-}
-
-// URLからDOI抽出
-function extractDoiFromUrl(url) {
-    // 様々なパターンのDOI URLに対応
-    const doiPatterns = [
-        /doi\.org\/(.*)$/,
-        /dx\.doi\.org\/(.*)$/,
-        /doi:(.*)$/,
-        /DOI:(.*)$/,
-        /\/doi\/(.*)$/,
-        /doi=(.*)$/,
-        /doi\/full\/(.*)$/,
-        /doi\/abs\/(.*)$/
-    ];
-    
-    for (const pattern of doiPatterns) {
-        const match = url.match(pattern);
-        if (match) {
-            let doi = match[1];
-            // URLエンコードされたDOIをデコード
-            doi = decodeURIComponent(doi);
-            // 余分な文字を削除
-            doi = doi.replace(/[?&#].*$/, '');
-            // DOI形式の検証
-            if (/^10\.\d{4,}\/\S+$/.test(doi)) {
-                return doi;
-            }
-        }
-    }
-    
-    return null;
-}
-
-// URL (DOI含む)から抽出
-async function extractFromUrlDoi() {
-    const url = urlDoiTextInput.value.trim();
-
-    if (!url) {
-        showError('URLを入力してください。');
-        return;
-    }
-
-    // URLの妥当性チェック
-    try {
-        new URL(url);
-    } catch {
-        showError('有効なURLを入力してください。');
-        return;
-    }
-
-    hideResults();
-    showLoading(paperLoading);
-
-    try {
-        // URLからDOIを抽出
-        const extractedDoi = extractDoiFromUrl(url);
+// 引用文献をコピー
+function copyCitation() {
+    const citation = citationResult.textContent;
+    navigator.clipboard.writeText(citation).then(() => {
+        // コピー成功の視覚的フィードバック
+        const originalText = copyButton.innerHTML;
+        copyButton.innerHTML = '<i class="fas fa-check"></i> コピー完了';
+        copyButton.classList.add('copied');
         
-        if (extractedDoi) {
-            hideLoading(paperLoading);
-            // DOIが見つかった場合、CrossRef APIで検索
-            await extractFromDOIInternal(extractedDoi, `URL: ${url}`);
-        } else if (aiAssistEnabled) {
-            // AI補助機能でDOI抽出を試行
-            const aiExtractedDoi = await extractDoiWithAI(url);
-            hideLoading(paperLoading);
-            
-            if (aiExtractedDoi) {
-                await extractFromDOIInternal(aiExtractedDoi, `URL (AI抽出): ${url}`);
-            } else {
-                showError('URLからDOIを見つけることができませんでした。DOIが含まれるURLであることを確認してください。');
-            }
-        } else {
-            hideLoading(paperLoading);
-            showError('URLからDOIを見つけることができませんでした。AI補助機能を有効にするとより正確な抽出が可能です。');
-        }
-    } catch (error) {
-        hideLoading(paperLoading);
-        showError('URL処理中にエラーが発生しました。');
-        console.error('URL DOI extraction error:', error);
-    }
+        setTimeout(() => {
+            copyButton.innerHTML = originalText;
+            copyButton.classList.remove('copied');
+        }, 2000);
+    }).catch(err => {
+        console.error('コピーに失敗しました:', err);
+        showError('コピーに失敗しました。');
+    });
 }
-
-// DOIから論文情報を抽出
-async function extractFromDOI() {
-    const doiText = doiTextInput.value.trim();
-
-    if (!doiText) {
-        showError('DOIを入力してください。');
-        return;
-    }
-
-    // DOIの形式チェック
-    const doiPattern = /^10\.\d{4,}\/\S+$/;
-    if (!doiPattern.test(doiText)) {
-        showError('正しいDOI形式を入力してください（例: 10.1000/182）。');
-        return;
-    }
-
-    hideResults();
-    showLoading(paperLoading);
-
-    await extractFromDOIInternal(doiText, `DOI: ${doiText}`);
-}
-
-// DOI抽出の内部処理
-async function extractFromDOIInternal(doi, sourceInfo) {
-    try {
-        // CrossRef APIを使用してDOI情報を取得
-        const crossRefUrl = `https://api.crossref.org/works/${encodeURIComponent(doi)}`;
-        
-        const response = await fetch(crossRefUrl, {
-            headers: {
-                'Accept': 'application/json',
-                'User-Agent': 'CitationGenerator/1.0 (mailto:example@email.com)'
-            }
-        });
-
-        hideLoading(paperLoading);
-
-        if (response.ok) {
-            const data = await response.json();
-            if (data.status === 'ok' && data.message) {
-                parseCrossRefData(data.message, sourceInfo);
-            } else {
-                showError('DOIから論文情報を取得できませんでした。DOIを確認してください。');
-            }
-        } else if (response.status === 404) {
-            showError('指定されたDOIは見つかりませんでした。DOIを確認してください。');
-        } else {
-            showError('DOI検索中にエラーが発生しました。しばらく時間をおいてお試しください。');
-        }
-    } catch (error) {
-        hideLoading(paperLoading);
-        showError('DOI検索中にネットワークエラーが発生しました。インターネット接続を確認してください。');
-        console.error('DOI extraction error:', error);
-    }
-}
-
-// AI補助機能でDOI抽出
-async function extractDoiWithAI(url) {
-    if (!aiAssistEnabled || !geminiApiKey) {
-        return null;
-    }
-
-    try {
-        const prompt = `以下のURLからDOI（Digital Object Identifier）を抽出してください。DOIは "10." で始まる形式です。
-
-URL: ${url}
-
-DOIが見つかった場合は、DOIのみを返してください（例: 10.1000/182）。
-DOIが見つからない場合は "NOT_FOUND" と返してください。`;
-
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [{ text: prompt }]
-                }]
-            })
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-            
-            if (text && text !== 'NOT_FOUND' && /^10\.\d{4,}\/\S+$/.test(text)) {
-                return text;
-            }
-        }
-    } catch (error) {
-        console.error('AI DOI extraction error:', error);
-    }
-    
-    return null;
-}
-
-// CrossRefからの論文データを解析
-function parseCrossRefData(work, sourceInfo) {
-    try {
-        // 著者情報の抽出（「・」区切りに変更）
-        const authors = work.author ? work.author.map(author => {
-            const given = author.given || '';
-            const family = author.family || '';
-            return given ? `${family} ${given}` : family;
-        }).join('・') : '著者不明';
-
-        // タイトルの抽出
-        const title = work.title && work.title[0] ? work.title[0] : 'タイトル不明';
-
-        // 雑誌名の抽出
-        const journal = work['container-title'] && work['container-title'][0] 
-            ? work['container-title'][0] 
-            : '雑誌名不明';
-
-        // 巻・号・ページの抽出
-        const volume = work.volume || '';
-        const issue = work.issue || '';
-        const pages = work.page || '';
-
-        // 発行年の抽出
-        let year = '';
-        if (work.published && work.published['date-parts'] && work.published['date-parts'][0]) {
-            year = work.published['date-parts'][0][0].toString();
-        } else if (work['published-online'] && work['publishe
