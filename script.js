@@ -174,33 +174,60 @@ function updateApiStatus() {
 
 // タブ切り替え
 function switchTab(tabName) {
-    // 全てのタブボタンとコンテンツを非アクティブに
     tabButtons.forEach(btn => btn.classList.remove('active'));
     tabContents.forEach(content => content.classList.remove('active'));
 
-    // 選択されたタブを アクティブに
     document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
     document.getElementById(`${tabName}-tab`).classList.add('active');
 
-    // 結果とエラーを隠す
     hideResults();
 }
 
 // 論文入力方法の切り替え
 function switchInputMethod(method) {
-    // 全ての入力方法タブを非アクティブに
     methodTabs.forEach(tab => tab.classList.remove('active'));
     methodContents.forEach(content => content.classList.remove('active'));
 
-    // 選択された入力方法をアクティブに
     document.querySelector(`[data-method="${method}"]`).classList.add('active');
     document.getElementById(`${method}-input`).classList.add('active');
 
-    // 結果とエラーを隠す
     hideResults();
 }
 
-// 書籍検索（TOP5制限追加）
+// 共通のローディング管理関数
+function showLoadingState(loadingElement) {
+    hideResults();
+    loadingElement.classList.remove('hidden');
+}
+
+function hideLoadingState(loadingElement) {
+    loadingElement.classList.add('hidden');
+}
+
+// 共通のAPI呼び出し関数
+async function makeApiCall(url, options = {}) {
+    const defaultOptions = {
+        method: 'GET',
+        headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'CitationGenerator/1.0'
+        },
+        ...options
+    };
+
+    try {
+        const response = await fetch(url, defaultOptions);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return await response.json();
+    } catch (error) {
+        console.error('API call failed:', error);
+        throw error;
+    }
+}
+
+// 書籍検索（修正版）
 async function searchBooks() {
     const query = bookSearchInput.value.trim();
     const searchType = searchTypeSelect.value;
@@ -210,27 +237,55 @@ async function searchBooks() {
         return;
     }
 
-    hideResults();
-    showLoading(loading);
+    showLoadingState(loading);
 
     try {
-        // Google Books APIを使用（TOP5に制限）
-        const apiUrl = searchType === 'isbn' 
-            ? `https://www.googleapis.com/books/v1/volumes?q=isbn:${encodeURIComponent(query)}&langRestrict=ja&maxResults=5`
-            : `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&langRestrict=ja&maxResults=5`;
+        // CORSプロキシを使用してGoogle Books APIにアクセス
+        const searchQuery = searchType === 'isbn' 
+            ? `isbn:${encodeURIComponent(query)}`
+            : encodeURIComponent(query);
+        
+        const apiUrl = `https://www.googleapis.com/books/v1/volumes?q=${searchQuery}&langRestrict=ja&maxResults=5`;
+        
+        // 複数のCORSプロキシを試行
+        const proxyUrls = [
+            `https://api.allorigins.win/get?url=${encodeURIComponent(apiUrl)}`,
+            `https://corsproxy.io/?${encodeURIComponent(apiUrl)}`
+        ];
 
-        const response = await fetch(apiUrl);
-        const data = await response.json();
+        let data = null;
+        let lastError = null;
 
-        hideLoading(loading);
+        for (const proxyUrl of proxyUrls) {
+            try {
+                const response = await fetch(proxyUrl);
+                if (response.ok) {
+                    const proxyData = await response.json();
+                    // allorigins.winの場合はcontentsプロパティを使用
+                    const jsonData = proxyData.contents ? JSON.parse(proxyData.contents) : proxyData;
+                    if (jsonData && (jsonData.items || jsonData.totalItems !== undefined)) {
+                        data = jsonData;
+                        break;
+                    }
+                }
+            } catch (error) {
+                lastError = error;
+                console.warn(`プロキシ ${proxyUrl} でエラー:`, error);
+                continue;
+            }
+        }
 
-        if (data.items && data.items.length > 0) {
+        hideLoadingState(loading);
+
+        if (data && data.items && data.items.length > 0) {
             displaySearchResults(data.items);
-        } else {
+        } else if (data && data.totalItems === 0) {
             showError('書籍が見つかりませんでした。検索キーワードを変更してお試しください。');
+        } else {
+            showError('書籍検索でエラーが発生しました。インターネット接続を確認するか、しばらく時間をおいてお試しください。');
         }
     } catch (error) {
-        hideLoading(loading);
+        hideLoadingState(loading);
         showError('検索中にエラーが発生しました。インターネット接続を確認してください。');
         console.error('Book search error:', error);
     }
@@ -240,7 +295,7 @@ async function searchBooks() {
 function displaySearchResults(books) {
     searchResults.innerHTML = '';
     
-    books.forEach((book, index) => {
+    books.forEach((book) => {
         const volumeInfo = book.volumeInfo;
         const authors = volumeInfo.authors ? volumeInfo.authors.join(', ') : '著者不明';
         const title = volumeInfo.title || 'タイトル不明';
@@ -267,16 +322,13 @@ function displaySearchResults(books) {
 
 // 書籍選択
 function selectBook(book, element) {
-    // 既存の選択を解除
     document.querySelectorAll('.search-item').forEach(item => {
         item.classList.remove('selected');
     });
 
-    // 新しい選択を設定
     element.classList.add('selected');
     selectedBook = book;
 
-    // 引用文献を生成
     generateBookCitation(book);
 }
 
@@ -293,7 +345,7 @@ function generateBookCitation(book) {
     showResult(citation);
 }
 
-// 論文抽出（J-STAGE強化）
+// 論文抽出（J-STAGE）
 async function extractPaper() {
     const url = jstageUrlInput.value.trim();
 
@@ -302,31 +354,24 @@ async function extractPaper() {
         return;
     }
 
-    // URLの妥当性チェック
-    try {
-        new URL(url);
-    } catch {
+    if (!isValidUrl(url)) {
         showError('有効なURLを入力してください。');
         return;
     }
 
-    // J-STAGEのURLかチェック
     if (!url.includes('jstage.jst.go.jp')) {
         showError('J-STAGEのURLを入力してください。他のサイトのURLは対応していません。');
         return;
     }
 
-    hideResults();
-    showLoading(paperLoading);
+    showLoadingState(paperLoading);
 
     try {
-        // まずURL構造からの基本情報抽出
         const basicInfo = extractPaperInfoFromUrl(url);
         
         if (aiAssistEnabled) {
-            // AI補助機能でより詳細な情報を抽出
             const aiExtractedInfo = await extractJstageInfoWithAI(url);
-            hideLoading(paperLoading);
+            hideLoadingState(paperLoading);
             
             if (aiExtractedInfo) {
                 const combinedInfo = { ...basicInfo, ...aiExtractedInfo };
@@ -335,47 +380,55 @@ async function extractPaper() {
                 showManualPaperForm(url, basicInfo);
             }
         } else {
-            // 従来のCORSプロキシを試行
             try {
-                const proxyServices = [
-                    `https://corsproxy.io/?${encodeURIComponent(url)}`,
-                    `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`
-                ];
-
-                let success = false;
-                for (const proxyUrl of proxyServices) {
-                    try {
-                        const response = await fetch(proxyUrl);
-                        if (response.ok) {
-                            const data = await response.json();
-                            if (data.contents || data.data) {
-                                hideLoading(paperLoading);
-                                const extractedInfo = parsePaperInfoFromHtml(data.contents || data.data, url);
-                                const combinedInfo = { ...basicInfo, ...extractedInfo };
-                                showManualPaperForm(url, combinedInfo);
-                                success = true;
-                                break;
-                            }
-                        }
-                    } catch (proxyError) {
-                        continue;
-                    }
-                }
-                
-                if (!success) {
-                    hideLoading(paperLoading);
-                    showManualPaperForm(url, basicInfo);
-                }
+                const extractedInfo = await extractWithProxy(url);
+                hideLoadingState(paperLoading);
+                const combinedInfo = { ...basicInfo, ...extractedInfo };
+                showManualPaperForm(url, combinedInfo);
             } catch {
-                hideLoading(paperLoading);
+                hideLoadingState(paperLoading);
                 showManualPaperForm(url, basicInfo);
             }
         }
         
     } catch (error) {
-        hideLoading(paperLoading);
+        hideLoadingState(paperLoading);
         showManualPaperForm(url);
         console.error('Paper extraction error:', error);
+    }
+}
+
+// 共通のプロキシ抽出関数
+async function extractWithProxy(url) {
+    const proxyServices = [
+        `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+        `https://corsproxy.io/?${encodeURIComponent(url)}`
+    ];
+
+    for (const proxyUrl of proxyServices) {
+        try {
+            const response = await fetch(proxyUrl);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.contents || data.data) {
+                    return parsePaperInfoFromHtml(data.contents || data.data, url);
+                }
+            }
+        } catch (error) {
+            continue;
+        }
+    }
+    
+    throw new Error('プロキシでの抽出に失敗しました');
+}
+
+// URL妥当性チェック関数
+function isValidUrl(string) {
+    try {
+        new URL(string);
+        return true;
+    } catch {
+        return false;
     }
 }
 
@@ -421,14 +474,12 @@ JSONのみを返し、他の説明は不要です。`;
             const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
             
             if (text) {
-                // JSONを抽出（マークダウンのコードブロックも考慮）
                 const jsonMatch = text.match(/```json\s*(.*?)\s*```/s) || text.match(/```\s*(.*?)\s*```/s);
                 const jsonText = jsonMatch ? jsonMatch[1] : text;
                 
                 try {
                     return JSON.parse(jsonText);
                 } catch {
-                    // JSON解析失敗時は部分的な情報を抽出
                     return parsePartialInfo(text);
                 }
             }
@@ -464,13 +515,12 @@ function parsePartialInfo(text) {
     return info;
 }
 
-// HTMLからの論文情報解析（強化版）
+// HTMLからの論文情報解析
 function parsePaperInfoFromHtml(html, url) {
     try {
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
 
-        // より多くのセレクタを試行
         const titleSelectors = [
             'h1.title', '.article-title', '.paper-title', 'h1', 
             '[class*="title"]', '#title', '.entry-title'
@@ -490,7 +540,7 @@ function parsePaperInfoFromHtml(html, url) {
         const authors = findTextFromSelectors(doc, authorSelectors) || '著者不明';
         const journal = findTextFromSelectors(doc, journalSelectors) || '雑誌名不明';
         
-        // メタデータからの情報取得も試行
+        // メタデータからの情報取得
         const metaTitle = doc.querySelector('meta[name="citation_title"]')?.getAttribute('content');
         const metaAuthors = doc.querySelector('meta[name="citation_author"]')?.getAttribute('content');
         const metaJournal = doc.querySelector('meta[name="citation_journal_title"]')?.getAttribute('content');
@@ -501,7 +551,7 @@ function parsePaperInfoFromHtml(html, url) {
 
         return {
             title: metaTitle || title,
-            authors: metaAuthors || authors.replace(/,/g, '・'), // カンマを・に変換
+            authors: metaAuthors || authors.replace(/,/g, '・'),
             journal: metaJournal || journal,
             volume: metaVolume || '',
             issue: metaIssue || '',
@@ -515,7 +565,7 @@ function parsePaperInfoFromHtml(html, url) {
     }
 }
 
-// セレクタから テキストを検索
+// セレクタからテキストを検索
 function findTextFromSelectors(doc, selectors) {
     for (const selector of selectors) {
         const element = doc.querySelector(selector);
@@ -526,18 +576,16 @@ function findTextFromSelectors(doc, selectors) {
     return null;
 }
 
-// URLから論文情報を抽出（J-STAGEのURL構造を利用）
+// URLから論文情報を抽出
 function extractPaperInfoFromUrl(url) {
     try {
         const urlObj = new URL(url);
         const pathParts = urlObj.pathname.split('/');
         
-        // J-STAGEのURL構造：/article/journal_code/volume_issue/article_id/
         if (pathParts.length >= 4) {
             const journalCode = pathParts[2];
             const volumeIssue = pathParts[3];
             
-            // 巻号情報の解析
             const volumeMatch = volumeIssue.match(/(\d+)_(\d+)/);
             if (volumeMatch) {
                 return {
@@ -554,9 +602,73 @@ function extractPaperInfoFromUrl(url) {
     }
 }
 
+// DOIから論文情報を抽出
+async function extractFromDOI() {
+    const doiText = doiTextInput.value.trim();
+
+    if (!doiText) {
+        showError('DOIを入力してください。');
+        return;
+    }
+
+    if (!isValidDoi(doiText)) {
+        showError('正しいDOI形式を入力してください（例: 10.1000/182）。');
+        return;
+    }
+
+    showLoadingState(paperLoading);
+    await extractFromDOIInternal(doiText, `DOI: ${doiText}`);
+}
+
+// DOI形式チェック
+function isValidDoi(doi) {
+    return /^10\.\d{4,}\/\S+$/.test(doi);
+}
+
+// URL (DOI含む)から抽出
+async function extractFromUrlDoi() {
+    const url = urlDoiTextInput.value.trim();
+
+    if (!url) {
+        showError('URLを入力してください。');
+        return;
+    }
+
+    if (!isValidUrl(url)) {
+        showError('有効なURLを入力してください。');
+        return;
+    }
+
+    showLoadingState(paperLoading);
+
+    try {
+        const extractedDoi = extractDoiFromUrl(url);
+        
+        if (extractedDoi) {
+            hideLoadingState(paperLoading);
+            await extractFromDOIInternal(extractedDoi, `URL: ${url}`);
+        } else if (aiAssistEnabled) {
+            const aiExtractedDoi = await extractDoiWithAI(url);
+            hideLoadingState(paperLoading);
+            
+            if (aiExtractedDoi) {
+                await extractFromDOIInternal(aiExtractedDoi, `URL (AI抽出): ${url}`);
+            } else {
+                showError('URLからDOIを見つけることができませんでした。DOIが含まれるURLであることを確認してください。');
+            }
+        } else {
+            hideLoadingState(paperLoading);
+            showError('URLからDOIを見つけることができませんでした。AI補助機能を有効にするとより正確な抽出が可能です。');
+        }
+    } catch (error) {
+        hideLoadingState(paperLoading);
+        showError('URL処理中にエラーが発生しました。');
+        console.error('URL DOI extraction error:', error);
+    }
+}
+
 // URLからDOI抽出
 function extractDoiFromUrl(url) {
-    // 様々なパターンのDOI URLに対応
     const doiPatterns = [
         /doi\.org\/(.*)$/,
         /dx\.doi\.org\/(.*)$/,
@@ -572,12 +684,9 @@ function extractDoiFromUrl(url) {
         const match = url.match(pattern);
         if (match) {
             let doi = match[1];
-            // URLエンコードされたDOIをデコード
             doi = decodeURIComponent(doi);
-            // 余分な文字を削除
             doi = doi.replace(/[?&#].*$/, '');
-            // DOI形式の検証
-            if (/^10\.\d{4,}\/\S+$/.test(doi)) {
+            if (isValidDoi(doi)) {
                 return doi;
             }
         }
@@ -586,107 +695,32 @@ function extractDoiFromUrl(url) {
     return null;
 }
 
-// URL (DOI含む)から抽出
-async function extractFromUrlDoi() {
-    const url = urlDoiTextInput.value.trim();
-
-    if (!url) {
-        showError('URLを入力してください。');
-        return;
-    }
-
-    // URLの妥当性チェック
-    try {
-        new URL(url);
-    } catch {
-        showError('有効なURLを入力してください。');
-        return;
-    }
-
-    hideResults();
-    showLoading(paperLoading);
-
-    try {
-        // URLからDOIを抽出
-        const extractedDoi = extractDoiFromUrl(url);
-        
-        if (extractedDoi) {
-            hideLoading(paperLoading);
-            // DOIが見つかった場合、CrossRef APIで検索
-            await extractFromDOIInternal(extractedDoi, `URL: ${url}`);
-        } else if (aiAssistEnabled) {
-            // AI補助機能でDOI抽出を試行
-            const aiExtractedDoi = await extractDoiWithAI(url);
-            hideLoading(paperLoading);
-            
-            if (aiExtractedDoi) {
-                await extractFromDOIInternal(aiExtractedDoi, `URL (AI抽出): ${url}`);
-            } else {
-                showError('URLからDOIを見つけることができませんでした。DOIが含まれるURLであることを確認してください。');
-            }
-        } else {
-            hideLoading(paperLoading);
-            showError('URLからDOIを見つけることができませんでした。AI補助機能を有効にするとより正確な抽出が可能です。');
-        }
-    } catch (error) {
-        hideLoading(paperLoading);
-        showError('URL処理中にエラーが発生しました。');
-        console.error('URL DOI extraction error:', error);
-    }
-}
-
-// DOIから論文情報を抽出
-async function extractFromDOI() {
-    const doiText = doiTextInput.value.trim();
-
-    if (!doiText) {
-        showError('DOIを入力してください。');
-        return;
-    }
-
-    // DOIの形式チェック
-    const doiPattern = /^10\.\d{4,}\/\S+$/;
-    if (!doiPattern.test(doiText)) {
-        showError('正しいDOI形式を入力してください（例: 10.1000/182）。');
-        return;
-    }
-
-    hideResults();
-    showLoading(paperLoading);
-
-    await extractFromDOIInternal(doiText, `DOI: ${doiText}`);
-}
-
 // DOI抽出の内部処理
 async function extractFromDOIInternal(doi, sourceInfo) {
     try {
-        // CrossRef APIを使用してDOI情報を取得
         const crossRefUrl = `https://api.crossref.org/works/${encodeURIComponent(doi)}`;
         
-        const response = await fetch(crossRefUrl, {
+        const data = await makeApiCall(crossRefUrl, {
             headers: {
                 'Accept': 'application/json',
                 'User-Agent': 'CitationGenerator/1.0 (mailto:example@email.com)'
             }
         });
 
-        hideLoading(paperLoading);
+        hideLoadingState(paperLoading);
 
-        if (response.ok) {
-            const data = await response.json();
-            if (data.status === 'ok' && data.message) {
-                parseCrossRefData(data.message, sourceInfo);
-            } else {
-                showError('DOIから論文情報を取得できませんでした。DOIを確認してください。');
-            }
-        } else if (response.status === 404) {
+        if (data.status === 'ok' && data.message) {
+            parseCrossRefData(data.message, sourceInfo);
+        } else {
+            showError('DOIから論文情報を取得できませんでした。DOIを確認してください。');
+        }
+    } catch (error) {
+        hideLoadingState(paperLoading);
+        if (error.message.includes('404')) {
             showError('指定されたDOIは見つかりませんでした。DOIを確認してください。');
         } else {
             showError('DOI検索中にエラーが発生しました。しばらく時間をおいてお試しください。');
         }
-    } catch (error) {
-        hideLoading(paperLoading);
-        showError('DOI検索中にネットワークエラーが発生しました。インターネット接続を確認してください。');
         console.error('DOI extraction error:', error);
     }
 }
@@ -721,7 +755,7 @@ DOIが見つからない場合は "NOT_FOUND" と返してください。`;
             const data = await response.json();
             const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
             
-            if (text && text !== 'NOT_FOUND' && /^10\.\d{4,}\/\S+$/.test(text)) {
+            if (text && text !== 'NOT_FOUND' && isValidDoi(text)) {
                 return text;
             }
         }
@@ -735,27 +769,21 @@ DOIが見つからない場合は "NOT_FOUND" と返してください。`;
 // CrossRefからの論文データを解析
 function parseCrossRefData(work, sourceInfo) {
     try {
-        // 著者情報の抽出（「・」区切りに変更）
         const authors = work.author ? work.author.map(author => {
             const given = author.given || '';
             const family = author.family || '';
             return given ? `${family} ${given}` : family;
         }).join('・') : '著者不明';
 
-        // タイトルの抽出
         const title = work.title && work.title[0] ? work.title[0] : 'タイトル不明';
-
-        // 雑誌名の抽出
         const journal = work['container-title'] && work['container-title'][0] 
             ? work['container-title'][0] 
             : '雑誌名不明';
 
-        // 巻・号・ページの抽出
         const volume = work.volume || '';
         const issue = work.issue || '';
         const pages = work.page || '';
 
-        // 発行年の抽出
         let year = '';
         if (work.published && work.published['date-parts'] && work.published['date-parts'][0]) {
             year = work.published['date-parts'][0][0].toString();
@@ -765,7 +793,6 @@ function parseCrossRefData(work, sourceInfo) {
             year = '発表年不明';
         }
 
-        // DOI情報を含めて手動フォームを表示
         const prefilledData = {
             authors: authors,
             title: title,
@@ -785,7 +812,7 @@ function parseCrossRefData(work, sourceInfo) {
     }
 }
 
-// Webサイト抽出（AI補助機能強化）
+// Webサイト抽出
 async function extractWebsite() {
     const url = websiteUrlInput.value.trim();
 
@@ -794,28 +821,22 @@ async function extractWebsite() {
         return;
     }
 
-    // URLの妥当性チェック
-    try {
-        new URL(url);
-    } catch {
+    if (!isValidUrl(url)) {
         showError('有効なURLを入力してください。');
         return;
     }
 
-    // J-STAGEのURLかチェック（エラー処理）
     if (url.includes('jstage.jst.go.jp')) {
         showError('J-STAGEのURLは論文タブで処理してください。');
         return;
     }
 
-    hideResults();
-    showLoading(websiteLoading);
+    showLoadingState(websiteLoading);
 
     try {
         if (aiAssistEnabled) {
-            // AI補助機能で情報抽出
             const aiExtractedInfo = await extractWebsiteInfoWithAI(url);
-            hideLoading(websiteLoading);
+            hideLoadingState(websiteLoading);
             
             if (aiExtractedInfo) {
                 const currentDate = getCurrentDateString();
@@ -824,47 +845,17 @@ async function extractWebsite() {
             }
         }
 
-        // 従来のプロキシ方式を試行
-        const proxyServices = [
-            `https://corsproxy.io/?${encodeURIComponent(url)}`,
-            `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-            `https://cors-anywhere.herokuapp.com/${url}`
-        ];
-
-        let success = false;
-        
-        for (const proxyUrl of proxyServices) {
-            try {
-                const response = await fetch(proxyUrl, {
-                    method: 'GET',
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                    }
-                });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    hideLoading(websiteLoading);
-                    
-                    if (data.contents || data.data) {
-                        parseWebsiteInfo(data.contents || data.data, url);
-                        success = true;
-                        break;
-                    }
-                }
-            } catch (proxyError) {
-                console.warn(`Proxy ${proxyUrl} failed:`, proxyError);
-                continue;
-            }
-        }
-        
-        if (!success) {
-            hideLoading(websiteLoading);
+        try {
+            const extractedInfo = await extractWithProxy(url);
+            hideLoadingState(websiteLoading);
+            parseWebsiteInfo(extractedInfo, url);
+        } catch {
+            hideLoadingState(websiteLoading);
             showManualWebsiteForm(url);
         }
         
     } catch (error) {
-        hideLoading(websiteLoading);
+        hideLoadingState(websiteLoading);
         showManualWebsiteForm(url);
         console.error('Website extraction error:', error);
     }
@@ -913,7 +904,6 @@ JSONのみを返し、他の説明は不要です。`;
                 try {
                     return JSON.parse(jsonText);
                 } catch {
-                    // JSON解析失敗時はドメインから推測
                     return {
                         title: 'ページタイトル不明',
                         siteName: getDomainName(url)
@@ -934,19 +924,16 @@ function parseWebsiteInfo(html, url) {
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
 
-        // ページタイトルを取得
         const pageTitle = doc.querySelector('title')?.textContent?.trim() || 
                          doc.querySelector('h1')?.textContent?.trim() || 
                          doc.querySelector('meta[property="og:title"]')?.getAttribute('content') ||
                          'ページタイトル不明';
 
-        // サイト名を取得（meta tagまたはドメインから）
         const siteName = doc.querySelector('meta[property="og:site_name"]')?.getAttribute('content') || 
                         doc.querySelector('meta[name="application-name"]')?.getAttribute('content') || 
                         getDomainName(url);
 
         const currentDate = getCurrentDateString();
-
         generateWebsiteCitation(pageTitle, siteName, url, currentDate);
     } catch (error) {
         showError('Webサイト情報の解析中にエラーが発生しました。');
@@ -964,7 +951,6 @@ function generateWebsiteCitation(pageTitle, siteName, url, accessDate) {
 function showManualPaperForm(sourceInfo, prefilledData = null) {
     const paperTab = document.getElementById('paper-tab');
     
-    // 既存の手動フォームがあれば削除
     const existingForm = paperTab.querySelector('.manual-form');
     if (existingForm) {
         existingForm.remove();
@@ -1050,14 +1036,12 @@ function showManualPaperForm(sourceInfo, prefilledData = null) {
     
     paperTab.appendChild(manualForm);
     
-    // イベントリスナー追加
     document.getElementById('generate-manual-paper-citation').addEventListener('click', generateManualPaperCitation);
     document.getElementById('cancel-manual-paper').addEventListener('click', () => {
         manualForm.remove();
         hideResults();
     });
     
-    // 最初の空の入力フィールドにフォーカス
     const firstEmptyField = manualForm.querySelector('input[value=""]') || document.getElementById('manual-paper-authors');
     firstEmptyField.focus();
 }
@@ -1072,7 +1056,6 @@ function generateManualPaperCitation() {
     let pages = document.getElementById('manual-paper-pages').value.trim();
     const year = document.getElementById('manual-paper-year').value.trim();
     
-    // 必須項目のチェック
     const requiredFields = [
         { value: authors, name: '著者名' },
         { value: title, name: '論文タイトル' },
@@ -1087,20 +1070,17 @@ function generateManualPaperCitation() {
         }
     }
     
-    // 年の形式チェック
     if (!/^\d{4}$/.test(year)) {
         showError('発表年は4桁の西暦で入力してください（例: 2016）。');
         return;
     }
     
-    // ページ番号の正規化
     if (pages && !pages.toLowerCase().startsWith('pp.')) {
         pages = `pp.${pages}`;
     }
     
     generatePaperCitation(authors, title, journal, volume, issue, pages, year);
     
-    // フォームを削除
     document.querySelector('.manual-form').remove();
 }
 
@@ -1127,7 +1107,6 @@ function generatePaperCitation(authors, title, journal, volume, issue, pages, ye
 function showManualWebsiteForm(url) {
     const websiteTab = document.getElementById('website-tab');
     
-    // 既存の手動フォームがあれば削除
     const existingForm = websiteTab.querySelector('.manual-form');
     if (existingForm) {
         existingForm.remove();
@@ -1170,14 +1149,12 @@ function showManualWebsiteForm(url) {
     
     websiteTab.appendChild(manualForm);
     
-    // イベントリスナー追加
     document.getElementById('generate-manual-citation').addEventListener('click', generateManualCitation);
     document.getElementById('cancel-manual').addEventListener('click', () => {
         manualForm.remove();
         hideResults();
     });
     
-    // 最初の入力フィールドにフォーカス
     document.getElementById('manual-title').focus();
 }
 
@@ -1185,9 +1162,7 @@ function showManualWebsiteForm(url) {
 function getDomainName(url) {
     try {
         const domain = new URL(url).hostname;
-        // www.を削除
         const cleanDomain = domain.replace(/^www\./, '');
-        // ドメインの最初の部分を大文字にして返す
         const siteName = cleanDomain.split('.')[0];
         return siteName.charAt(0).toUpperCase() + siteName.slice(1);
     } catch {
@@ -1224,18 +1199,7 @@ function generateManualCitation() {
     
     generateWebsiteCitation(title, siteName, url, accessDate);
     
-    // フォームを削除
     document.querySelector('.manual-form').remove();
-}
-
-// ローディング表示
-function showLoading(element) {
-    element.classList.remove('hidden');
-}
-
-// ローディング非表示
-function hideLoading(element) {
-    element.classList.add('hidden');
 }
 
 // 結果表示
@@ -1262,7 +1226,6 @@ function hideResults() {
 function copyCitation() {
     const citation = citationResult.textContent;
     navigator.clipboard.writeText(citation).then(() => {
-        // コピー成功の視覚的フィードバック
         const originalText = copyButton.innerHTML;
         copyButton.innerHTML = '<i class="fas fa-check"></i> コピー完了';
         copyButton.classList.add('copied');
