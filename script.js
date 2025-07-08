@@ -62,6 +62,12 @@ function initializeManualForms() {
     if (websiteDateInput) {
         websiteDateInput.value = getCurrentDateString();
     }
+    
+    // Webサイト編集フォームの日付を現在の日付に設定
+    const websiteEditDateInput = document.getElementById('website-edit-date');
+    if (websiteEditDateInput) {
+        websiteEditDateInput.value = getCurrentDateString();
+    }
 }
 
 // イベントリスナーの設定
@@ -364,25 +370,40 @@ function selectBook(book, element) {
     element.classList.add('selected');
     selectedBook = book;
 
-    generateBookCitation(book);
+    // 書籍情報を編集フォームに事前入力して表示
+    const volumeInfo = book.volumeInfo;
+    const authors = volumeInfo.authors ? volumeInfo.authors.join('・') : '';
+    const title = volumeInfo.title || '';
+    const publisher = volumeInfo.publisher || '';
+    const publishedDate = volumeInfo.publishedDate ? volumeInfo.publishedDate.split('-')[0] : '';
+    
+    fillBookEditForm(authors, title, publisher, publishedDate);
+    showBookEditForm();
 }
 
-// 書籍引用文献生成
-function generateBookCitation(book) {
-    const volumeInfo = book.volumeInfo;
-    const authors = volumeInfo.authors ? volumeInfo.authors.join('・') : '著者不明';
-    const title = volumeInfo.title || 'タイトル不明';
-    const publisher = volumeInfo.publisher || '出版社不明';
-    const publishedDate = volumeInfo.publishedDate ? volumeInfo.publishedDate.split('-')[0] : '発行年不明';
+// 書籍引用文献生成（オーバーロード対応）
+function generateBookCitation(authorsOrBook, title = null, publisher = null, year = null) {
+    let authors, bookTitle, bookPublisher, bookYear;
+    
+    if (typeof authorsOrBook === 'object' && authorsOrBook.volumeInfo) {
+        // 書籍オブジェクトから生成
+        const volumeInfo = authorsOrBook.volumeInfo;
+        authors = volumeInfo.authors ? volumeInfo.authors.join('・') : '著者不明';
+        bookTitle = volumeInfo.title || 'タイトル不明';
+        bookPublisher = volumeInfo.publisher || '出版社不明';
+        bookYear = volumeInfo.publishedDate ? volumeInfo.publishedDate.split('-')[0] : '発行年不明';
+    } else {
+        // 個別パラメータから生成
+        authors = authorsOrBook || '著者不明';
+        bookTitle = title || 'タイトル不明';
+        bookPublisher = publisher || '出版社不明';
+        bookYear = year || '発行年不明';
+    }
 
-    const citation = `${authors}(${publishedDate}), ${title}, ${publisher}`;
+    const citation = `${authors}(${bookYear}), ${bookTitle}, ${bookPublisher}`;
     
-    // 自動生成結果を表示
+    // 引用文献を表示
     showResult(citation);
-    
-    // 手動入力フォームに自動取得した情報を事前入力
-    fillBookManualForm(authors, title, publisher, publishedDate);
-    showBookManualForm();
 }
 
 // 書籍手動入力フォームに情報を事前入力
@@ -1894,20 +1915,9 @@ function showWebsiteManualForm() {
 
 // 手動入力フォーム表示（論文用）
 function showManualPaperForm(sourceInfo, prefilledData = null) {
-    const paperTab = document.getElementById('paper-tab');
-    
-    // 既存の動的フォームがあれば削除
-    const existingForm = paperTab.querySelector('.manual-form');
-    if (existingForm) {
-        existingForm.remove();
-    }
-    
-    // 手動入力タブに切り替えて、そこに情報を事前入力
-    fillPaperManualForm(prefilledData);
-    showPaperManualForm();
-    
-    // 動的フォームは廃止し、固定の手動入力フォームのみ使用
-    return;
+    // インライン編集フォームを表示し、事前入力
+    fillPaperEditForm(prefilledData);
+    showPaperEditForm();
 }
 
 // 論文手動入力フォームに情報を事前入力
@@ -2012,9 +2022,9 @@ function generatePaperCitation(authors, title, journal, volume, issue, pages, ye
 
 // 手動入力フォーム表示（Webサイト用）
 function showManualWebsiteForm(url) {
-    // 固定の手動入力フォームに切り替えて、情報を事前入力
-    fillWebsiteManualForm('', getDomainName(url), url, getCurrentDateString());
-    showWebsiteManualForm();
+    // インライン編集フォームを表示し、事前入力
+    fillWebsiteEditForm('', getDomainName(url), url, getCurrentDateString());
+    showWebsiteEditForm();
 }
 
 // ドメイン名から推測されるサイト名を取得
@@ -2168,6 +2178,37 @@ function setupManualFormListeners() {
     if (clearWebsiteButton) {
         clearWebsiteButton.addEventListener('click', clearWebsiteManualForm);
     }
+
+    // インライン編集フォーム
+    const generateBookEditButton = document.getElementById('generate-book-edit-citation');
+    const clearBookEditButton = document.getElementById('clear-book-edit');
+    
+    if (generateBookEditButton) {
+        generateBookEditButton.addEventListener('click', generateBookEditCitation);
+    }
+    if (clearBookEditButton) {
+        clearBookEditButton.addEventListener('click', clearBookEditForm);
+    }
+
+    const generatePaperEditButton = document.getElementById('generate-paper-edit-citation');
+    const clearPaperEditButton = document.getElementById('clear-paper-edit');
+    
+    if (generatePaperEditButton) {
+        generatePaperEditButton.addEventListener('click', generatePaperEditCitation);
+    }
+    if (clearPaperEditButton) {
+        clearPaperEditButton.addEventListener('click', clearPaperEditForm);
+    }
+
+    const generateWebsiteEditButton = document.getElementById('generate-website-edit-citation');
+    const clearWebsiteEditButton = document.getElementById('clear-website-edit');
+    
+    if (generateWebsiteEditButton) {
+        generateWebsiteEditButton.addEventListener('click', generateWebsiteEditCitation);
+    }
+    if (clearWebsiteEditButton) {
+        clearWebsiteEditButton.addEventListener('click', clearWebsiteEditForm);
+    }
 }
 
 // 書籍手動入力からの引用文献生成
@@ -2291,4 +2332,177 @@ function clearWebsiteManualForm() {
     document.getElementById('website-manual-url').value = '';
     document.getElementById('website-manual-date').value = getCurrentDateString();
     hideResults();
+}
+
+// インライン編集フォーム表示機能
+function showBookEditForm() {
+    const editForm = document.getElementById('book-edit-form');
+    if (editForm) {
+        editForm.classList.remove('hidden');
+    }
+}
+
+function showPaperEditForm() {
+    const editForm = document.getElementById('paper-edit-form');
+    if (editForm) {
+        editForm.classList.remove('hidden');
+    }
+}
+
+function showWebsiteEditForm() {
+    const editForm = document.getElementById('website-edit-form');
+    if (editForm) {
+        editForm.classList.remove('hidden');
+    }
+}
+
+// インライン編集フォームの事前入力機能
+function fillBookEditForm(authors, title, publisher, year) {
+    const authorsInput = document.getElementById('book-edit-authors');
+    const titleInput = document.getElementById('book-edit-title');
+    const publisherInput = document.getElementById('book-edit-publisher');
+    const yearInput = document.getElementById('book-edit-year');
+    
+    if (authorsInput && authors) authorsInput.value = authors;
+    if (titleInput && title) titleInput.value = title;
+    if (publisherInput && publisher) publisherInput.value = publisher;
+    if (yearInput && year) yearInput.value = year;
+}
+
+function fillPaperEditForm(prefilledData) {
+    if (!prefilledData) return;
+    
+    const authorsInput = document.getElementById('paper-edit-authors');
+    const titleInput = document.getElementById('paper-edit-title');
+    const journalInput = document.getElementById('paper-edit-journal');
+    const volumeInput = document.getElementById('paper-edit-volume');
+    const issueInput = document.getElementById('paper-edit-issue');
+    const pagesInput = document.getElementById('paper-edit-pages');
+    const yearInput = document.getElementById('paper-edit-year');
+    
+    if (authorsInput && prefilledData.authors) authorsInput.value = prefilledData.authors;
+    if (titleInput && prefilledData.title) titleInput.value = prefilledData.title;
+    if (journalInput && prefilledData.journal) journalInput.value = prefilledData.journal;
+    if (volumeInput && prefilledData.volume) volumeInput.value = prefilledData.volume;
+    if (issueInput && prefilledData.issue) issueInput.value = prefilledData.issue;
+    if (pagesInput && prefilledData.pages) pagesInput.value = prefilledData.pages;
+    if (yearInput && prefilledData.year) yearInput.value = prefilledData.year;
+}
+
+function fillWebsiteEditForm(title, siteName, url, accessDate) {
+    const titleInput = document.getElementById('website-edit-title');
+    const siteInput = document.getElementById('website-edit-site');
+    const urlInput = document.getElementById('website-edit-url');
+    const dateInput = document.getElementById('website-edit-date');
+    
+    if (titleInput && title) titleInput.value = title;
+    if (siteInput && siteName) siteInput.value = siteName;
+    if (urlInput && url) urlInput.value = url;
+    if (dateInput && accessDate) dateInput.value = accessDate;
+}
+
+// インライン編集フォームのクリア機能
+function clearBookEditForm() {
+    document.getElementById('book-edit-authors').value = '';
+    document.getElementById('book-edit-title').value = '';
+    document.getElementById('book-edit-publisher').value = '';
+    document.getElementById('book-edit-year').value = '';
+    hideResults();
+}
+
+function clearPaperEditForm() {
+    document.getElementById('paper-edit-authors').value = '';
+    document.getElementById('paper-edit-title').value = '';
+    document.getElementById('paper-edit-journal').value = '';
+    document.getElementById('paper-edit-volume').value = '';
+    document.getElementById('paper-edit-issue').value = '';
+    document.getElementById('paper-edit-pages').value = '';
+    document.getElementById('paper-edit-year').value = '';
+    hideResults();
+}
+
+function clearWebsiteEditForm() {
+    document.getElementById('website-edit-title').value = '';
+    document.getElementById('website-edit-site').value = '';
+    document.getElementById('website-edit-url').value = '';
+    document.getElementById('website-edit-date').value = getCurrentDateString();
+    hideResults();
+}
+
+// インライン編集フォームの送信処理
+function generateBookEditCitation() {
+    const authors = document.getElementById('book-edit-authors').value.trim();
+    const title = document.getElementById('book-edit-title').value.trim();
+    const publisher = document.getElementById('book-edit-publisher').value.trim();
+    const year = document.getElementById('book-edit-year').value.trim();
+    
+    const requiredFields = [
+        { value: authors, name: '著者名' },
+        { value: title, name: '書籍タイトル' },
+        { value: publisher, name: '出版社' },
+        { value: year, name: '発行年' }
+    ];
+    
+    for (const field of requiredFields) {
+        if (!field.value) {
+            showError(`${field.name}を入力してください。`);
+            return;
+        }
+    }
+    
+    generateBookCitation(authors, title, publisher, year);
+}
+
+function generatePaperEditCitation() {
+    const authors = document.getElementById('paper-edit-authors').value.trim();
+    const title = document.getElementById('paper-edit-title').value.trim();
+    const journal = document.getElementById('paper-edit-journal').value.trim();
+    const volume = document.getElementById('paper-edit-volume').value.trim();
+    const issue = document.getElementById('paper-edit-issue').value.trim();
+    const pages = document.getElementById('paper-edit-pages').value.trim();
+    const year = document.getElementById('paper-edit-year').value.trim();
+    
+    const requiredFields = [
+        { value: authors, name: '著者名' },
+        { value: title, name: '論文タイトル' },
+        { value: journal, name: '雑誌名' },
+        { value: year, name: '発表年' }
+    ];
+    
+    for (const field of requiredFields) {
+        if (!field.value) {
+            showError(`${field.name}を入力してください。`);
+            return;
+        }
+    }
+    
+    generatePaperCitation(authors, title, journal, volume, issue, pages, year);
+}
+
+function generateWebsiteEditCitation() {
+    const title = document.getElementById('website-edit-title').value.trim();
+    const siteName = document.getElementById('website-edit-site').value.trim();
+    const url = document.getElementById('website-edit-url').value.trim();
+    const accessDate = document.getElementById('website-edit-date').value.trim();
+    
+    const requiredFields = [
+        { value: title, name: 'ページタイトル' },
+        { value: siteName, name: 'サイト名' },
+        { value: url, name: 'URL' },
+        { value: accessDate, name: '閲覧年月日' }
+    ];
+    
+    for (const field of requiredFields) {
+        if (!field.value) {
+            showError(`${field.name}を入力してください。`);
+            return;
+        }
+    }
+    
+    if (!isValidUrl(url)) {
+        showError('有効なURLを入力してください。');
+        return;
+    }
+    
+    generateWebsiteCitation(title, siteName, url, accessDate);
 }

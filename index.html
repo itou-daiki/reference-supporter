@@ -129,6 +129,41 @@
                         <div id="loading" class="loading hidden">
                             <i class="fas fa-spinner fa-spin"></i> 検索中...
                         </div>
+                        
+                        <!-- 手動入力フォーム（自動検索後に表示） -->
+                        <div id="book-edit-form" class="edit-form-section hidden">
+                            <h3><i class="fas fa-edit"></i> 検索結果を確認・編集</h3>
+                            <p class="help-text">自動検索された情報を確認し、必要に応じて修正してください。</p>
+                            
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="book-edit-authors">著者名: <span class="required">*</span></label>
+                                    <input type="text" id="book-edit-authors" placeholder="例: 田中太郎">
+                                    <small class="field-help">複数著者の場合は「・」（中点）で区切ってください</small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="book-edit-title">書籍タイトル: <span class="required">*</span></label>
+                                    <input type="text" id="book-edit-title" placeholder="例: Pythonプログラミング入門">
+                                </div>
+                                <div class="form-group">
+                                    <label for="book-edit-publisher">出版社: <span class="required">*</span></label>
+                                    <input type="text" id="book-edit-publisher" placeholder="例: 技術評論社">
+                                </div>
+                                <div class="form-group">
+                                    <label for="book-edit-year">発行年: <span class="required">*</span></label>
+                                    <input type="text" id="book-edit-year" placeholder="例: 2023">
+                                </div>
+                            </div>
+                            
+                            <div class="form-actions">
+                                <button id="generate-book-edit-citation" class="btn-primary">
+                                    <i class="fas fa-quote-right"></i> 引用文献を生成
+                                </button>
+                                <button id="clear-book-edit" class="btn-secondary">
+                                    <i class="fas fa-eraser"></i> クリア
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -283,6 +318,54 @@
                     <div id="paper-loading" class="loading hidden">
                         <i class="fas fa-spinner fa-spin"></i> 抽出中...
                     </div>
+                    
+                    <!-- 手動入力フォーム（自動抽出後に表示） -->
+                    <div id="paper-edit-form" class="edit-form-section hidden">
+                        <h3><i class="fas fa-edit"></i> 抽出結果を確認・編集</h3>
+                        <p class="help-text">自動抽出された情報を確認し、必要に応じて修正してください。</p>
+                        
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="paper-edit-authors">著者名: <span class="required">*</span></label>
+                                <input type="text" id="paper-edit-authors" placeholder="例: 田中太郎">
+                                <small class="field-help">複数著者の場合は「・」（中点）で区切ってください</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="paper-edit-title">論文タイトル: <span class="required">*</span></label>
+                                <input type="text" id="paper-edit-title" placeholder="例: 機械学習における新しいアプローチ">
+                            </div>
+                            <div class="form-group">
+                                <label for="paper-edit-journal">雑誌名: <span class="required">*</span></label>
+                                <input type="text" id="paper-edit-journal" placeholder="例: 情報処理学会論文誌">
+                            </div>
+                            <div class="form-group">
+                                <label for="paper-edit-volume">巻数:</label>
+                                <input type="text" id="paper-edit-volume" placeholder="例: 50">
+                            </div>
+                            <div class="form-group">
+                                <label for="paper-edit-issue">号数:</label>
+                                <input type="text" id="paper-edit-issue" placeholder="例: 10">
+                            </div>
+                            <div class="form-group">
+                                <label for="paper-edit-pages">ページ:</label>
+                                <input type="text" id="paper-edit-pages" placeholder="例: 45-50">
+                                <small class="field-help">「pp.」は自動で追加されます</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="paper-edit-year">発表年: <span class="required">*</span></label>
+                                <input type="text" id="paper-edit-year" placeholder="例: 2023">
+                            </div>
+                        </div>
+                        
+                        <div class="form-actions">
+                            <button id="generate-paper-edit-citation" class="btn-primary">
+                                <i class="fas fa-quote-right"></i> 引用文献を生成
+                            </button>
+                            <button id="clear-paper-edit" class="btn-secondary">
+                                <i class="fas fa-eraser"></i> クリア
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -312,6 +395,41 @@
                         </div>
                         <div id="website-loading" class="loading hidden">
                             <i class="fas fa-spinner fa-spin"></i> 抽出中...
+                        </div>
+                        
+                        <!-- 手動入力フォーム（自動抽出後に表示） -->
+                        <div id="website-edit-form" class="edit-form-section hidden">
+                            <h3><i class="fas fa-edit"></i> 抽出結果を確認・編集</h3>
+                            <p class="help-text">自動抽出された情報を確認し、必要に応じて修正してください。</p>
+                            
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="website-edit-title">ページタイトル: <span class="required">*</span></label>
+                                    <input type="text" id="website-edit-title" placeholder="例: プログラミング学習の基礎">
+                                </div>
+                                <div class="form-group">
+                                    <label for="website-edit-site">サイト名: <span class="required">*</span></label>
+                                    <input type="text" id="website-edit-site" placeholder="例: 技術情報サイト">
+                                </div>
+                                <div class="form-group">
+                                    <label for="website-edit-url">URL: <span class="required">*</span></label>
+                                    <input type="url" id="website-edit-url" placeholder="例: https://example.com/article">
+                                </div>
+                                <div class="form-group">
+                                    <label for="website-edit-date">閲覧年月日: <span class="required">*</span></label>
+                                    <input type="text" id="website-edit-date" placeholder="例: 2023.12.15" readonly>
+                                    <small class="field-help">本日の日付が自動入力されます</small>
+                                </div>
+                            </div>
+                            
+                            <div class="form-actions">
+                                <button id="generate-website-edit-citation" class="btn-primary">
+                                    <i class="fas fa-quote-right"></i> 引用文献を生成
+                                </button>
+                                <button id="clear-website-edit" class="btn-secondary">
+                                    <i class="fas fa-eraser"></i> クリア
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
