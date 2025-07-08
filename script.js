@@ -48,7 +48,21 @@ const apiStatus = document.getElementById('api-status');
 document.addEventListener('DOMContentLoaded', function() {
     setupEventListeners();
     loadSettings();
+    initializeManualForms();
+    
+    // デバッグ: 要素の存在確認
+    console.log('Edit button element:', editButton);
+    console.log('Edit section element:', editSection);
 });
+
+// 手動入力フォームの初期化
+function initializeManualForms() {
+    // Webサイト手動入力の日付を現在の日付に設定
+    const websiteDateInput = document.getElementById('website-manual-date');
+    if (websiteDateInput) {
+        websiteDateInput.value = getCurrentDateString();
+    }
+}
 
 // イベントリスナーの設定
 function setupEventListeners() {
@@ -57,7 +71,7 @@ function setupEventListeners() {
         button.addEventListener('click', () => switchTab(button.dataset.tab));
     });
 
-    // 論文入力方法の切り替え
+    // 入力方法の切り替え（全タブ共通）
     methodTabs.forEach(tab => {
         tab.addEventListener('click', () => switchInputMethod(tab.dataset.method));
     });
@@ -99,6 +113,9 @@ function setupEventListeners() {
     editButton.addEventListener('click', editCitation);
     saveEditButton.addEventListener('click', saveEditedCitation);
     cancelEditButton.addEventListener('click', cancelEdit);
+
+    // 手動入力フォーム
+    setupManualFormListeners();
 
     // サイドバー関連
     sidebarToggle.addEventListener('click', openSidebar);
@@ -193,13 +210,21 @@ function switchTab(tabName) {
     hideResults();
 }
 
-// 論文入力方法の切り替え
+// 入力方法の切り替え
 function switchInputMethod(method) {
     methodTabs.forEach(tab => tab.classList.remove('active'));
     methodContents.forEach(content => content.classList.remove('active'));
 
     document.querySelector(`[data-method="${method}"]`).classList.add('active');
     document.getElementById(`${method}-input`).classList.add('active');
+
+    // Webサイト手動入力の場合、現在の日付を設定
+    if (method === 'website-manual') {
+        const dateInput = document.getElementById('website-manual-date');
+        if (dateInput) {
+            dateInput.value = getCurrentDateString();
+        }
+    }
 
     hideResults();
 }
@@ -1838,6 +1863,10 @@ function showResult(citation) {
     resultSection.classList.remove('hidden');
     editSection.classList.add('hidden');
     errorSection.classList.add('hidden');
+    
+    // デバッグ: 編集ボタンの表示確認
+    console.log('Result shown, edit button visible:', !editButton?.classList.contains('hidden'));
+    console.log('Edit button element check:', document.getElementById('edit-button'));
 }
 
 // エラー表示
@@ -1856,11 +1885,21 @@ function hideResults() {
 
 // 引用文献編集開始
 function editCitation() {
+    console.log('Edit function called');
     const citation = citationResult.textContent;
+    console.log('Citation to edit:', citation);
+    
+    if (!citation || citation.trim() === '') {
+        showError('編集する引用文献がありません。');
+        return;
+    }
+    
     citationEdit.value = citation;
     editSection.classList.remove('hidden');
     resultSection.classList.add('hidden');
     citationEdit.focus();
+    
+    console.log('Edit section shown');
 }
 
 // 編集した引用文献を保存
@@ -1910,4 +1949,163 @@ function copyCitation() {
         console.error('コピーに失敗しました:', err);
         showError('コピーに失敗しました。');
     });
+}
+
+// 手動入力フォームのイベントリスナー設定
+function setupManualFormListeners() {
+    // 書籍手動入力
+    const generateBookButton = document.getElementById('generate-book-manual-citation');
+    const clearBookButton = document.getElementById('clear-book-manual');
+    
+    if (generateBookButton) {
+        generateBookButton.addEventListener('click', generateBookManualCitation);
+    }
+    if (clearBookButton) {
+        clearBookButton.addEventListener('click', clearBookManualForm);
+    }
+
+    // 論文手動入力
+    const generatePaperButton = document.getElementById('generate-paper-manual-citation');
+    const clearPaperButton = document.getElementById('clear-paper-manual');
+    
+    if (generatePaperButton) {
+        generatePaperButton.addEventListener('click', generatePaperManualCitation);
+    }
+    if (clearPaperButton) {
+        clearPaperButton.addEventListener('click', clearPaperManualForm);
+    }
+
+    // Webサイト手動入力
+    const generateWebsiteButton = document.getElementById('generate-website-manual-citation');
+    const clearWebsiteButton = document.getElementById('clear-website-manual');
+    
+    if (generateWebsiteButton) {
+        generateWebsiteButton.addEventListener('click', generateWebsiteManualCitation);
+    }
+    if (clearWebsiteButton) {
+        clearWebsiteButton.addEventListener('click', clearWebsiteManualForm);
+    }
+}
+
+// 書籍手動入力からの引用文献生成
+function generateBookManualCitation() {
+    const authors = document.getElementById('book-manual-authors').value.trim();
+    const title = document.getElementById('book-manual-title').value.trim();
+    const publisher = document.getElementById('book-manual-publisher').value.trim();
+    const year = document.getElementById('book-manual-year').value.trim();
+    
+    const requiredFields = [
+        { value: authors, name: '著者名' },
+        { value: title, name: '書籍タイトル' },
+        { value: publisher, name: '出版社' },
+        { value: year, name: '発行年' }
+    ];
+    
+    for (const field of requiredFields) {
+        if (!field.value) {
+            showError(`${field.name}を入力してください。`);
+            return;
+        }
+    }
+    
+    if (!/^\d{4}$/.test(year)) {
+        showError('発行年は4桁の西暦で入力してください（例: 2023）。');
+        return;
+    }
+    
+    const citation = `${authors}(${year}), ${title}, ${publisher}`;
+    showResult(citation);
+}
+
+// 論文手動入力からの引用文献生成
+function generatePaperManualCitation() {
+    const authors = document.getElementById('paper-manual-authors').value.trim();
+    const title = document.getElementById('paper-manual-title').value.trim();
+    const journal = document.getElementById('paper-manual-journal').value.trim();
+    const volume = document.getElementById('paper-manual-volume').value.trim();
+    const issue = document.getElementById('paper-manual-issue').value.trim();
+    let pages = document.getElementById('paper-manual-pages').value.trim();
+    const year = document.getElementById('paper-manual-year').value.trim();
+    
+    const requiredFields = [
+        { value: authors, name: '著者名' },
+        { value: title, name: '論文タイトル' },
+        { value: journal, name: '雑誌名' },
+        { value: year, name: '発表年' }
+    ];
+    
+    for (const field of requiredFields) {
+        if (!field.value) {
+            showError(`${field.name}を入力してください。`);
+            return;
+        }
+    }
+    
+    if (!/^\d{4}$/.test(year)) {
+        showError('発表年は4桁の西暦で入力してください（例: 2023）。');
+        return;
+    }
+    
+    if (pages && !pages.toLowerCase().startsWith('pp.')) {
+        pages = `pp.${pages}`;
+    }
+    
+    generatePaperCitation(authors, title, journal, volume, issue, pages, year);
+}
+
+// Webサイト手動入力からの引用文献生成
+function generateWebsiteManualCitation() {
+    const title = document.getElementById('website-manual-title').value.trim();
+    const siteName = document.getElementById('website-manual-site').value.trim();
+    const url = document.getElementById('website-manual-url').value.trim();
+    const accessDate = document.getElementById('website-manual-date').value.trim();
+    
+    const requiredFields = [
+        { value: title, name: 'ページタイトル' },
+        { value: siteName, name: 'サイト名' },
+        { value: url, name: 'URL' },
+        { value: accessDate, name: '閲覧年月日' }
+    ];
+    
+    for (const field of requiredFields) {
+        if (!field.value) {
+            showError(`${field.name}を入力してください。`);
+            return;
+        }
+    }
+    
+    if (!isValidUrl(url)) {
+        showError('有効なURLを入力してください。');
+        return;
+    }
+    
+    generateWebsiteCitation(title, siteName, url, accessDate);
+}
+
+// フォームクリア機能
+function clearBookManualForm() {
+    document.getElementById('book-manual-authors').value = '';
+    document.getElementById('book-manual-title').value = '';
+    document.getElementById('book-manual-publisher').value = '';
+    document.getElementById('book-manual-year').value = '';
+    hideResults();
+}
+
+function clearPaperManualForm() {
+    document.getElementById('paper-manual-authors').value = '';
+    document.getElementById('paper-manual-title').value = '';
+    document.getElementById('paper-manual-journal').value = '';
+    document.getElementById('paper-manual-volume').value = '';
+    document.getElementById('paper-manual-issue').value = '';
+    document.getElementById('paper-manual-pages').value = '';
+    document.getElementById('paper-manual-year').value = '';
+    hideResults();
+}
+
+function clearWebsiteManualForm() {
+    document.getElementById('website-manual-title').value = '';
+    document.getElementById('website-manual-site').value = '';
+    document.getElementById('website-manual-url').value = '';
+    document.getElementById('website-manual-date').value = getCurrentDateString();
+    hideResults();
 }

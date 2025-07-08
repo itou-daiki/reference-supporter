@@ -100,23 +100,72 @@
 
             <!-- 書籍タブ -->
             <div id="book-tab" class="tab-content active">
-                <div class="search-section">
-                    <h2><i class="fas fa-search"></i> 書籍検索</h2>
-                    <div class="search-form">
-                        <div class="input-group">
-                            <select id="search-type">
-                                <option value="title">タイトル検索</option>
-                                <option value="isbn">ISBN検索</option>
-                            </select>
-                            <input type="text" id="book-search" placeholder="書籍タイトルまたはISBNを入力">
-                            <button id="search-button" class="btn-primary">
-                                <i class="fas fa-search"></i>
-                            </button>
+                <div class="input-method-tabs">
+                    <button class="method-tab active" data-method="book-search">
+                        <i class="fas fa-search"></i> 自動検索
+                    </button>
+                    <button class="method-tab" data-method="book-manual">
+                        <i class="fas fa-edit"></i> 手動入力
+                    </button>
+                </div>
+
+                <!-- 自動検索 -->
+                <div id="book-search-input" class="input-method-content active">
+                    <div class="search-section">
+                        <h2><i class="fas fa-search"></i> 書籍検索</h2>
+                        <div class="search-form">
+                            <div class="input-group">
+                                <select id="search-type">
+                                    <option value="title">タイトル検索</option>
+                                    <option value="isbn">ISBN検索</option>
+                                </select>
+                                <input type="text" id="book-search" placeholder="書籍タイトルまたはISBNを入力">
+                                <button id="search-button" class="btn-primary">
+                                    <i class="fas fa-search"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="search-results" class="search-results"></div>
+                        <div id="loading" class="loading hidden">
+                            <i class="fas fa-spinner fa-spin"></i> 検索中...
                         </div>
                     </div>
-                    <div id="search-results" class="search-results"></div>
-                    <div id="loading" class="loading hidden">
-                        <i class="fas fa-spinner fa-spin"></i> 検索中...
+                </div>
+
+                <!-- 手動入力 -->
+                <div id="book-manual-input" class="input-method-content">
+                    <div class="manual-input-section">
+                        <h2><i class="fas fa-edit"></i> 書籍情報を手動入力</h2>
+                        <p class="help-text">書籍の各要素を入力して引用文献を作成します。</p>
+                        
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="book-manual-authors">著者名: <span class="required">*</span></label>
+                                <input type="text" id="book-manual-authors" placeholder="例: 田中太郎">
+                                <small class="field-help">複数著者の場合は「・」（中点）で区切ってください</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="book-manual-title">書籍タイトル: <span class="required">*</span></label>
+                                <input type="text" id="book-manual-title" placeholder="例: Pythonプログラミング入門">
+                            </div>
+                            <div class="form-group">
+                                <label for="book-manual-publisher">出版社: <span class="required">*</span></label>
+                                <input type="text" id="book-manual-publisher" placeholder="例: 技術評論社">
+                            </div>
+                            <div class="form-group">
+                                <label for="book-manual-year">発行年: <span class="required">*</span></label>
+                                <input type="text" id="book-manual-year" placeholder="例: 2023">
+                            </div>
+                        </div>
+                        
+                        <div class="form-actions">
+                            <button id="generate-book-manual-citation" class="btn-primary">
+                                <i class="fas fa-quote-right"></i> 引用文献を生成
+                            </button>
+                            <button id="clear-book-manual" class="btn-secondary">
+                                <i class="fas fa-eraser"></i> クリア
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -136,6 +185,9 @@
                         </button>
                         <button class="method-tab" data-method="url-doi">
                             <i class="fas fa-globe"></i> URL (DOI含む)
+                        </button>
+                        <button class="method-tab" data-method="paper-manual">
+                            <i class="fas fa-edit"></i> 手動入力
                         </button>
                     </div>
                     
@@ -178,6 +230,56 @@
                         </div>
                     </div>
                     
+                    <!-- 手動入力 -->
+                    <div id="paper-manual-input" class="input-method-content">
+                        <div class="manual-input-section">
+                            <h2><i class="fas fa-edit"></i> 論文情報を手動入力</h2>
+                            <p class="help-text">論文の各要素を入力して引用文献を作成します。</p>
+                            
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="paper-manual-authors">著者名: <span class="required">*</span></label>
+                                    <input type="text" id="paper-manual-authors" placeholder="例: 田中太郎">
+                                    <small class="field-help">複数著者の場合は「・」（中点）で区切ってください</small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="paper-manual-title">論文タイトル: <span class="required">*</span></label>
+                                    <input type="text" id="paper-manual-title" placeholder="例: 機械学習における新しいアプローチ">
+                                </div>
+                                <div class="form-group">
+                                    <label for="paper-manual-journal">雑誌名: <span class="required">*</span></label>
+                                    <input type="text" id="paper-manual-journal" placeholder="例: 情報処理学会論文誌">
+                                </div>
+                                <div class="form-group">
+                                    <label for="paper-manual-volume">巻数:</label>
+                                    <input type="text" id="paper-manual-volume" placeholder="例: 50">
+                                </div>
+                                <div class="form-group">
+                                    <label for="paper-manual-issue">号数:</label>
+                                    <input type="text" id="paper-manual-issue" placeholder="例: 10">
+                                </div>
+                                <div class="form-group">
+                                    <label for="paper-manual-pages">ページ:</label>
+                                    <input type="text" id="paper-manual-pages" placeholder="例: 45-50">
+                                    <small class="field-help">「pp.」は自動で追加されます</small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="paper-manual-year">発表年: <span class="required">*</span></label>
+                                    <input type="text" id="paper-manual-year" placeholder="例: 2023">
+                                </div>
+                            </div>
+                            
+                            <div class="form-actions">
+                                <button id="generate-paper-manual-citation" class="btn-primary">
+                                    <i class="fas fa-quote-right"></i> 引用文献を生成
+                                </button>
+                                <button id="clear-paper-manual" class="btn-secondary">
+                                    <i class="fas fa-eraser"></i> クリア
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
                     <div id="paper-loading" class="loading hidden">
                         <i class="fas fa-spinner fa-spin"></i> 抽出中...
                     </div>
@@ -186,19 +288,68 @@
 
             <!-- Webサイトタブ -->
             <div id="website-tab" class="tab-content">
-                <div class="url-section">
-                    <h2><i class="fas fa-link"></i> WebサイトURL入力</h2>
-                    <div class="input-group">
-                        <input type="url" id="website-url" placeholder="WebサイトのURLを入力してください">
-                        <button id="extract-website" class="btn-primary">
-                            <i class="fas fa-extract"></i> 抽出
-                        </button>
+                <div class="input-method-tabs">
+                    <button class="method-tab active" data-method="website-auto">
+                        <i class="fas fa-link"></i> 自動抽出
+                    </button>
+                    <button class="method-tab" data-method="website-manual">
+                        <i class="fas fa-edit"></i> 手動入力
+                    </button>
+                </div>
+
+                <!-- 自動抽出 -->
+                <div id="website-auto-input" class="input-method-content active">
+                    <div class="url-section">
+                        <h2><i class="fas fa-link"></i> WebサイトURL入力</h2>
+                        <div class="input-group">
+                            <input type="url" id="website-url" placeholder="WebサイトのURLを入力してください">
+                            <button id="extract-website" class="btn-primary">
+                                <i class="fas fa-extract"></i> 抽出
+                            </button>
+                        </div>
+                        <div class="input-help">
+                            AI補助機能が有効な場合、より正確な情報抽出が可能です
+                        </div>
+                        <div id="website-loading" class="loading hidden">
+                            <i class="fas fa-spinner fa-spin"></i> 抽出中...
+                        </div>
                     </div>
-                    <div class="input-help">
-                        AI補助機能が有効な場合、より正確な情報抽出が可能です
-                    </div>
-                    <div id="website-loading" class="loading hidden">
-                        <i class="fas fa-spinner fa-spin"></i> 抽出中...
+                </div>
+
+                <!-- 手動入力 -->
+                <div id="website-manual-input" class="input-method-content">
+                    <div class="manual-input-section">
+                        <h2><i class="fas fa-edit"></i> Webサイト情報を手動入力</h2>
+                        <p class="help-text">Webサイトの各要素を入力して引用文献を作成します。</p>
+                        
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="website-manual-title">ページタイトル: <span class="required">*</span></label>
+                                <input type="text" id="website-manual-title" placeholder="例: プログラミング学習の基礎">
+                            </div>
+                            <div class="form-group">
+                                <label for="website-manual-site">サイト名: <span class="required">*</span></label>
+                                <input type="text" id="website-manual-site" placeholder="例: 技術情報サイト">
+                            </div>
+                            <div class="form-group">
+                                <label for="website-manual-url">URL: <span class="required">*</span></label>
+                                <input type="url" id="website-manual-url" placeholder="例: https://example.com/article">
+                            </div>
+                            <div class="form-group">
+                                <label for="website-manual-date">閲覧年月日: <span class="required">*</span></label>
+                                <input type="text" id="website-manual-date" placeholder="例: 2023.12.15" readonly>
+                                <small class="field-help">本日の日付が自動入力されます</small>
+                            </div>
+                        </div>
+                        
+                        <div class="form-actions">
+                            <button id="generate-website-manual-citation" class="btn-primary">
+                                <i class="fas fa-quote-right"></i> 引用文献を生成
+                            </button>
+                            <button id="clear-website-manual" class="btn-secondary">
+                                <i class="fas fa-eraser"></i> クリア
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
