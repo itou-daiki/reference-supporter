@@ -370,14 +370,51 @@ function selectBook(book, element) {
 // 書籍引用文献生成
 function generateBookCitation(book) {
     const volumeInfo = book.volumeInfo;
-    const authors = volumeInfo.authors ? volumeInfo.authors.join(', ') : '著者不明';
+    const authors = volumeInfo.authors ? volumeInfo.authors.join('・') : '著者不明';
     const title = volumeInfo.title || 'タイトル不明';
     const publisher = volumeInfo.publisher || '出版社不明';
     const publishedDate = volumeInfo.publishedDate ? volumeInfo.publishedDate.split('-')[0] : '発行年不明';
 
     const citation = `${authors}(${publishedDate}), ${title}, ${publisher}`;
     
+    // 自動生成結果を表示
     showResult(citation);
+    
+    // 手動入力フォームに自動取得した情報を事前入力
+    fillBookManualForm(authors, title, publisher, publishedDate);
+    showBookManualForm();
+}
+
+// 書籍手動入力フォームに情報を事前入力
+function fillBookManualForm(authors, title, publisher, year) {
+    const authorsInput = document.getElementById('book-manual-authors');
+    const titleInput = document.getElementById('book-manual-title');
+    const publisherInput = document.getElementById('book-manual-publisher');
+    const yearInput = document.getElementById('book-manual-year');
+    
+    if (authorsInput) authorsInput.value = authors !== '著者不明' ? authors : '';
+    if (titleInput) titleInput.value = title !== 'タイトル不明' ? title : '';
+    if (publisherInput) publisherInput.value = publisher !== '出版社不明' ? publisher : '';
+    if (yearInput) yearInput.value = year !== '発行年不明' ? year : '';
+}
+
+// 書籍手動入力フォームを表示
+function showBookManualForm() {
+    const bookTab = document.getElementById('book-tab');
+    const manualTab = bookTab.querySelector('[data-method="book-manual"]');
+    const manualContent = document.getElementById('book-manual-input');
+    
+    if (manualTab && manualContent) {
+        // タブを手動入力に切り替え
+        bookTab.querySelectorAll('.method-tab').forEach(tab => tab.classList.remove('active'));
+        bookTab.querySelectorAll('.input-method-content').forEach(content => content.classList.remove('active'));
+        
+        manualTab.classList.add('active');
+        manualContent.classList.add('active');
+        
+        // フォームを表示状態にする
+        manualContent.style.display = 'block';
+    }
 }
 
 // 論文抽出（J-STAGE）
@@ -522,7 +559,10 @@ function extractMetadata(doc) {
 function extractContentElements(doc) {
     const content = {};
     
-    // タイトル要素の抽出（優先順位順）
+    // 1. Article要素のheader構造から優先抽出
+    content.articleHeaders = extractArticleHeaders(doc);
+    
+    // 2. 一般的なタイトル要素の抽出（優先順位順）
     const titleSelectors = [
         'h1.title', 'h1.paper-title', 'h1.article-title', 'h1.entry-title',
         '.title:not(.journal-title)', '.paper-title', '.article-title',
@@ -530,7 +570,7 @@ function extractContentElements(doc) {
     ];
     content.titles = extractElementsBySelectors(doc, titleSelectors);
     
-    // 著者要素の抽出
+    // 3. 著者要素の抽出
     const authorSelectors = [
         '.authors', '.author-list', '.paper-authors', '.author-names',
         '.contributor-list', '.creators', '[class*="author"]:not([class*="journal"])',
@@ -538,7 +578,7 @@ function extractContentElements(doc) {
     ];
     content.authors = extractElementsBySelectors(doc, authorSelectors);
     
-    // 雑誌/サイト名要素の抽出
+    // 4. 雑誌/サイト名要素の抽出
     const journalSelectors = [
         '.journal-title', '.publication-title', '.journal-name', '.source-title',
         '.container-title', '.journal', '[class*="journal"][class*="title"]',
@@ -546,7 +586,7 @@ function extractContentElements(doc) {
     ];
     content.journals = extractElementsBySelectors(doc, journalSelectors);
     
-    // 数値情報の抽出
+    // 5. 数値情報の抽出
     const numberSelectors = [
         '.volume', '.issue', '.pages', '.page-range', '[class*="volume"]',
         '[class*="issue"]', '[class*="page"]'
@@ -554,6 +594,124 @@ function extractContentElements(doc) {
     content.numbers = extractElementsBySelectors(doc, numberSelectors);
     
     return content;
+}
+
+// Article要素のheader構造から情報抽出
+function extractArticleHeaders(doc) {
+    const articleHeaders = [];
+    
+    // article > header の構造を検索
+    const articles = doc.querySelectorAll('article');
+    
+    articles.forEach((article, articleIndex) => {
+        const header = article.querySelector('header');
+        if (header) {
+            const headerInfo = {
+                articleIndex: articleIndex,
+                elements: {}
+            };
+            
+            // header内の主要要素を抽出
+            const headerSelectors = {
+                title: [
+                    'h1', 'h2', 'h3', '.title', '.headline', '.entry-title', 
+                    '.post-title', '.article-title', '.header-title'
+                ],
+                subtitle: [
+                    '.subtitle', '.subheading', '.summary', '.excerpt', '.lead'
+                ],
+                author: [
+                    '.author', '.byline', '.author-name', '.contributor', 
+                    '.writers', '[rel="author"]'
+                ],
+                date: [
+                    'time', '.date', '.published', '.timestamp', '.publish-date',
+                    '[datetime]', '.entry-date'
+                ],
+                category: [
+                    '.category', '.section', '.topic', '.tag', '.genre'
+                ],
+                source: [
+                    '.source', '.publication', '.site-name', '.brand'
+                ]
+            };
+            
+            // 各タイプの要素を抽出
+            Object.entries(headerSelectors).forEach(([type, selectors]) => {
+                headerInfo.elements[type] = [];
+                
+                selectors.forEach(selector => {
+                    const elements = header.querySelectorAll(selector);
+                    elements.forEach(element => {
+                        const text = element.textContent?.trim();
+                        const datetime = element.getAttribute('datetime');
+                        
+                        if (text && text.length > 0 && text.length < 500) {
+                            headerInfo.elements[type].push({
+                                selector: selector,
+                                text: text,
+                                datetime: datetime,
+                                tagName: element.tagName.toLowerCase(),
+                                confidence: calculateArticleHeaderConfidence(selector, text, type, element)
+                            });
+                        }
+                    });
+                });
+                
+                // 信頼度順にソート
+                headerInfo.elements[type].sort((a, b) => b.confidence - a.confidence);
+            });
+            
+            // 有効な情報が含まれているheaderのみ追加
+            if (Object.values(headerInfo.elements).some(arr => arr.length > 0)) {
+                articleHeaders.push(headerInfo);
+            }
+        }
+    });
+    
+    return articleHeaders;
+}
+
+// Article header要素の信頼度計算
+function calculateArticleHeaderConfidence(selector, text, type, element) {
+    let confidence = 15; // article > header にあることで基本的に高い信頼度
+    
+    // セレクタベースの信頼度
+    if (selector.includes('h1')) confidence += 8;
+    else if (selector.includes('h2')) confidence += 6;
+    else if (selector.includes('h3')) confidence += 4;
+    
+    if (selector.includes('.title')) confidence += 6;
+    if (selector.includes('.headline')) confidence += 5;
+    if (selector.includes('.author')) confidence += 5;
+    if (selector.includes('[rel="author"]')) confidence += 7;
+    if (selector.includes('time')) confidence += 6;
+    if (selector.includes('[datetime]')) confidence += 7;
+    
+    // タイプ別の調整
+    switch (type) {
+        case 'title':
+            if (text.length > 10 && text.length < 150) confidence += 3;
+            break;
+        case 'author':
+            if (text.length > 2 && text.length < 100) confidence += 2;
+            if (!/\d{4}/.test(text)) confidence += 2; // 年を含まない
+            break;
+        case 'date':
+            if (element.getAttribute('datetime')) confidence += 5;
+            if (/\d{4}/.test(text)) confidence += 3; // 年を含む
+            break;
+        case 'source':
+            if (text.length > 2 && text.length < 50) confidence += 2;
+            break;
+    }
+    
+    // セマンティック要素の優遇
+    if (element.tagName.toLowerCase() === 'time') confidence += 5;
+    if (element.hasAttribute('itemProp')) confidence += 3;
+    if (element.hasAttribute('rel')) confidence += 3;
+    
+    return confidence;
 }
 
 // セレクタ配列から要素を抽出
@@ -1444,26 +1602,72 @@ function createStructuredPromptForWebsite(url, structuredData) {
     
     let extractedElements = "【ページから抽出された要素】\n";
     
-    // メタデータ情報
+    // 1. Article Header情報（最優先）
+    if (contentInfo.articleHeaders?.length > 0) {
+        extractedElements += "【Article Header構造から抽出（最優先）】\n";
+        contentInfo.articleHeaders.forEach((articleHeader, index) => {
+            extractedElements += `- Article ${index + 1}:\n`;
+            
+            // タイトル情報
+            if (articleHeader.elements.title?.length > 0) {
+                extractedElements += "  - タイトル:\n";
+                articleHeader.elements.title.slice(0, 2).forEach(title => {
+                    extractedElements += `    - "${title.text}" (信頼度: ${title.confidence}, ${title.tagName}${title.selector})\n`;
+                });
+            }
+            
+            // 著者情報
+            if (articleHeader.elements.author?.length > 0) {
+                extractedElements += "  - 著者:\n";
+                articleHeader.elements.author.slice(0, 2).forEach(author => {
+                    extractedElements += `    - "${author.text}" (信頼度: ${author.confidence}, ${author.tagName}${author.selector})\n`;
+                });
+            }
+            
+            // 日付情報
+            if (articleHeader.elements.date?.length > 0) {
+                extractedElements += "  - 日付:\n";
+                articleHeader.elements.date.slice(0, 2).forEach(date => {
+                    const datetimeInfo = date.datetime ? ` datetime="${date.datetime}"` : '';
+                    extractedElements += `    - "${date.text}" (信頼度: ${date.confidence}, ${date.tagName}${date.selector}${datetimeInfo})\n`;
+                });
+            }
+            
+            // ソース/サイト名情報
+            if (articleHeader.elements.source?.length > 0) {
+                extractedElements += "  - ソース/サイト名:\n";
+                articleHeader.elements.source.slice(0, 2).forEach(source => {
+                    extractedElements += `    - "${source.text}" (信頼度: ${source.confidence}, ${source.tagName}${source.selector})\n`;
+                });
+            }
+        });
+        extractedElements += "\n";
+    }
+    
+    // 2. メタデータ情報
+    extractedElements += "【メタデータ】\n";
     if (metadataInfo.title) extractedElements += `- <title>: "${metadataInfo.title}"\n`;
     if (metadataInfo.ogTitle) extractedElements += `- og:title: "${metadataInfo.ogTitle}"\n`;
     if (metadataInfo.twitterTitle) extractedElements += `- twitter:title: "${metadataInfo.twitterTitle}"\n`;
     if (metadataInfo.siteName) extractedElements += `- og:site_name: "${metadataInfo.siteName}"\n`;
     if (metadataInfo.description) extractedElements += `- description: "${metadataInfo.description}"\n`;
+    extractedElements += "\n";
     
-    // コンテンツ要素（上位3つまで）
+    // 3. 一般的なコンテンツ要素（上位3つまで）
     if (contentInfo.titles?.length > 0) {
-        extractedElements += "- タイトル候補:\n";
+        extractedElements += "【一般的なタイトル候補】\n";
         contentInfo.titles.slice(0, 3).forEach(title => {
-            extractedElements += `  - "${title.text}" (信頼度: ${title.confidence}, セレクタ: ${title.selector})\n`;
+            extractedElements += `- "${title.text}" (信頼度: ${title.confidence}, セレクタ: ${title.selector})\n`;
         });
+        extractedElements += "\n";
     }
     
     if (contentInfo.journals?.length > 0) {
-        extractedElements += "- サイト名候補:\n";
+        extractedElements += "【サイト名候補】\n";
         contentInfo.journals.slice(0, 3).forEach(site => {
-            extractedElements += `  - "${site.text}" (信頼度: ${site.confidence}, セレクタ: ${site.selector})\n`;
+            extractedElements += `- "${site.text}" (信頼度: ${site.confidence}, セレクタ: ${site.selector})\n`;
         });
+        extractedElements += "\n";
     }
 
     return `あなたはWebサイト情報抽出の専門家です。以下のページから抽出された構造化データを元に、正確なページ情報を選択してください。
@@ -1479,10 +1683,13 @@ ${extractedElements}
 4. 不明な項目は空文字列にしてください
 
 【選択ルール】
-- 最も信頼度の高い要素を優先してください
-- メタデータ（og:title、<title>等）がある場合はそれを最優先してください
+- Article Header構造から抽出された情報を最優先してください（最も信頼性が高い）
+- Article Header内では信頼度の高い要素を優先してください
+- Article Headerが複数ある場合は、最も信頼度の高いタイトルを持つものを選択してください
+- Article Headerがない場合は、メタデータ（og:title、<title>等）を次の優先度とします
 - サイト名とページタイトルを混同しないでください
 - 明らかに関連記事やナビゲーションのタイトルは除外してください
+- <time>要素のdatetime属性がある場合は、それを日付情報として活用してください
 
 以下の形式のJSONで返してください：
 {
@@ -1531,26 +1738,81 @@ JSONのみを返し、説明や推測は一切含めないでください。`;
 function validateAndCorrectWebsiteResult(aiResult, structuredData, url) {
     const validated = { ...aiResult };
     
-    // メタデータとの照合
     const metadata = structuredData.metadata;
+    const content = structuredData.content;
     
-    // タイトルの検証（優先順位: og:title > title > その他）
+    // タイトルの検証（優先順位: Article Header > メタデータ > 一般要素）
     if (!validated.title || validated.title === "") {
-        if (metadata.ogTitle && metadata.ogTitle.length > 5 && metadata.ogTitle.length < 200) {
-            validated.title = metadata.ogTitle;
-        } else if (metadata.title && metadata.title.length > 5 && metadata.title.length < 200) {
-            validated.title = metadata.title;
-        } else if (structuredData.content.titles?.length > 0) {
-            validated.title = structuredData.content.titles[0].text;
+        // 1. Article Header から最優先で取得
+        if (content.articleHeaders?.length > 0) {
+            for (const articleHeader of content.articleHeaders) {
+                if (articleHeader.elements.title?.length > 0) {
+                    const bestTitle = articleHeader.elements.title[0]; // 信頼度順でソート済み
+                    if (bestTitle.text.length > 5 && bestTitle.text.length < 200) {
+                        validated.title = bestTitle.text;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // 2. Article Headerがない場合はメタデータから取得
+        if (!validated.title || validated.title === "") {
+            if (metadata.ogTitle && metadata.ogTitle.length > 5 && metadata.ogTitle.length < 200) {
+                validated.title = metadata.ogTitle;
+            } else if (metadata.title && metadata.title.length > 5 && metadata.title.length < 200) {
+                validated.title = metadata.title;
+            } else if (content.titles?.length > 0) {
+                validated.title = content.titles[0].text;
+            }
         }
     }
     
-    // サイト名の検証
+    // サイト名の検証（優先順位: Article Header source > メタデータ > ドメイン名）
     if (!validated.siteName || validated.siteName === "") {
-        if (metadata.siteName && metadata.siteName.length > 2 && metadata.siteName.length < 100) {
-            validated.siteName = metadata.siteName;
-        } else {
-            validated.siteName = getDomainName(url);
+        // 1. Article Header から取得
+        if (content.articleHeaders?.length > 0) {
+            for (const articleHeader of content.articleHeaders) {
+                if (articleHeader.elements.source?.length > 0) {
+                    const bestSource = articleHeader.elements.source[0]; // 信頼度順でソート済み
+                    if (bestSource.text.length > 2 && bestSource.text.length < 100) {
+                        validated.siteName = bestSource.text;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // 2. Article Headerがない場合はメタデータから取得
+        if (!validated.siteName || validated.siteName === "") {
+            if (metadata.siteName && metadata.siteName.length > 2 && metadata.siteName.length < 100) {
+                validated.siteName = metadata.siteName;
+            } else {
+                validated.siteName = getDomainName(url);
+            }
+        }
+    }
+    
+    // 日付情報の追加（Article Headerから取得可能な場合）
+    if (!validated.accessDate && content.articleHeaders?.length > 0) {
+        for (const articleHeader of content.articleHeaders) {
+            if (articleHeader.elements.date?.length > 0) {
+                const bestDate = articleHeader.elements.date[0];
+                if (bestDate.datetime) {
+                    // ISO形式の日付を日本の形式に変換
+                    try {
+                        const dateObj = new Date(bestDate.datetime);
+                        validated.publishDate = dateObj.toLocaleDateString('ja-JP', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit'
+                        }).replace(/\//g, '.');
+                    } catch (error) {
+                        // 日付解析エラーは無視
+                    }
+                }
+                break;
+            }
         }
     }
     
@@ -1592,106 +1854,100 @@ function parseWebsiteInfo(html, url) {
 function generateWebsiteCitation(pageTitle, siteName, url, accessDate) {
     const citation = `${pageTitle}, ${siteName}, ${url} (${accessDate})`;
     showResult(citation);
+    
+    // 手動入力フォームに自動取得した情報を事前入力
+    fillWebsiteManualForm(pageTitle, siteName, url, accessDate);
+    showWebsiteManualForm();
+}
+
+// Webサイト手動入力フォームに情報を事前入力
+function fillWebsiteManualForm(pageTitle, siteName, url, accessDate) {
+    const titleInput = document.getElementById('website-manual-title');
+    const siteInput = document.getElementById('website-manual-site');
+    const urlInput = document.getElementById('website-manual-url');
+    const dateInput = document.getElementById('website-manual-date');
+    
+    if (titleInput && pageTitle !== 'ページタイトル不明') titleInput.value = pageTitle;
+    if (siteInput && siteName) siteInput.value = siteName;
+    if (urlInput && url) urlInput.value = url;
+    if (dateInput && accessDate) dateInput.value = accessDate;
+}
+
+// Webサイト手動入力フォームを表示
+function showWebsiteManualForm() {
+    const websiteTab = document.getElementById('website-tab');
+    const manualTab = websiteTab.querySelector('[data-method="website-manual"]');
+    const manualContent = document.getElementById('website-manual-input');
+    
+    if (manualTab && manualContent) {
+        // タブを手動入力に切り替え
+        websiteTab.querySelectorAll('.method-tab').forEach(tab => tab.classList.remove('active'));
+        websiteTab.querySelectorAll('.input-method-content').forEach(content => content.classList.remove('active'));
+        
+        manualTab.classList.add('active');
+        manualContent.classList.add('active');
+        
+        // フォームを表示状態にする
+        manualContent.style.display = 'block';
+    }
 }
 
 // 手動入力フォーム表示（論文用）
 function showManualPaperForm(sourceInfo, prefilledData = null) {
     const paperTab = document.getElementById('paper-tab');
     
+    // 既存の動的フォームがあれば削除
     const existingForm = paperTab.querySelector('.manual-form');
     if (existingForm) {
-        existingForm.style.display = 'block';
-        return;
+        existingForm.remove();
     }
     
-    const isDOI = sourceInfo.startsWith('DOI:');
-    const isAI = sourceInfo.includes('(AI抽出)');
+    // 手動入力タブに切り替えて、そこに情報を事前入力
+    fillPaperManualForm(prefilledData);
+    showPaperManualForm();
     
-    const manualForm = document.createElement('div');
-    manualForm.className = 'manual-form';
-    manualForm.innerHTML = `
-        <div class="manual-input-section">
-            <h3><i class="fas fa-edit"></i> 論文情報${isDOI ? '確認・編集' : '入力'}${isAI ? '<span class="ai-assist-badge"><i class="fas fa-robot"></i>AI補助</span>' : ''}</h3>
-            <p class="help-text">${isDOI 
-                ? 'DOIから自動取得した情報です。必要に応じて編集してください。' 
-                : 'J-STAGEのページから論文情報をコピーして入力してください。URLから一部の情報は自動入力されています。'}</p>
-            
-            <div class="url-display">
-                <label>${isDOI ? 'DOI:' : '参照URL:'}</label>
-                <div class="url-box">${sourceInfo}</div>
-            </div>
-            
-            <div class="form-grid">
-                <div class="form-group">
-                    <label for="manual-paper-authors">著者名: <span class="required">*</span></label>
-                    <input type="text" id="manual-paper-authors" placeholder="例: 豆田町子" value="${prefilledData?.authors || ''}">
-                    <small class="field-help">複数著者の場合は「・」（中点）で区切ってください</small>
-                </div>
-                <div class="form-group">
-                    <label for="manual-paper-title">論文タイトル: <span class="required">*</span></label>
-                    <input type="text" id="manual-paper-title" placeholder="例: 大分川の水質" value="${prefilledData?.title || ''}">
-                </div>
-                <div class="form-group">
-                    <label for="manual-paper-journal">雑誌名: <span class="required">*</span></label>
-                    <input type="text" id="manual-paper-journal" placeholder="例: 水の友" value="${prefilledData?.journal || ''}">
-                </div>
-                <div class="form-group">
-                    <label for="manual-paper-volume">巻数:</label>
-                    <input type="text" id="manual-paper-volume" placeholder="例: 50" value="${prefilledData?.volume || ''}">
-                </div>
-                <div class="form-group">
-                    <label for="manual-paper-issue">号数:</label>
-                    <input type="text" id="manual-paper-issue" placeholder="例: 10" value="${prefilledData?.issue || ''}">
-                </div>
-                <div class="form-group">
-                    <label for="manual-paper-pages">ページ:</label>
-                    <input type="text" id="manual-paper-pages" placeholder="例: pp.45-50 または 45-50" value="${prefilledData?.pages || ''}">
-                    <small class="field-help">「pp.」は自動で追加されます</small>
-                </div>
-                <div class="form-group">
-                    <label for="manual-paper-year">発表年: <span class="required">*</span></label>
-                    <input type="text" id="manual-paper-year" placeholder="例: 2016" value="${prefilledData?.year || new Date().getFullYear()}">
-                </div>
-            </div>
-            
-            <div class="input-tips">
-                <h4><i class="fas fa-lightbulb"></i> ${isDOI ? '編集のコツ' : '入力のコツ'}</h4>
-                <ul>
-                    ${isDOI ? `
-                        <li>自動取得された情報を確認し、必要に応じて修正してください</li>
-                        <li>英語の論文の場合、著者名を日本語形式に変更できます</li>
-                        <li>雑誌名は日本語に翻訳または略称に変更できます</li>
-                    ` : `
-                        <li>J-STAGEのページタイトルや論文詳細ページから情報をコピーしてください</li>
-                        <li>著者名は「姓名」の順で入力してください（例: 田中太郎）</li>
-                    `}
-                    <li>複数著者の場合は「・」（中点）で区切ってください</li>
-                    <li>ページ番号に「pp.」が含まれていない場合は自動で追加されます</li>
-                    <li><span class="required">*</span> マークの項目は必須です</li>
-                </ul>
-            </div>
-            
-            <div class="form-actions">
-                <button id="generate-manual-paper-citation" class="btn-primary">
-                    <i class="fas fa-quote-right"></i> 引用文献を生成
-                </button>
-                <button id="cancel-manual-paper" class="btn-secondary">
-                    <i class="fas fa-times"></i> キャンセル
-                </button>
-            </div>
-        </div>
-    `;
+    // 動的フォームは廃止し、固定の手動入力フォームのみ使用
+    return;
+}
+
+// 論文手動入力フォームに情報を事前入力
+function fillPaperManualForm(prefilledData) {
+    if (!prefilledData) return;
     
-    paperTab.appendChild(manualForm);
+    const authorsInput = document.getElementById('paper-manual-authors');
+    const titleInput = document.getElementById('paper-manual-title');
+    const journalInput = document.getElementById('paper-manual-journal');
+    const volumeInput = document.getElementById('paper-manual-volume');
+    const issueInput = document.getElementById('paper-manual-issue');
+    const pagesInput = document.getElementById('paper-manual-pages');
+    const yearInput = document.getElementById('paper-manual-year');
     
-    document.getElementById('generate-manual-paper-citation').addEventListener('click', generateManualPaperCitation);
-    document.getElementById('cancel-manual-paper').addEventListener('click', () => {
-        manualForm.style.display = 'none';
-        hideResults();
-    });
+    if (authorsInput && prefilledData.authors) authorsInput.value = prefilledData.authors;
+    if (titleInput && prefilledData.title) titleInput.value = prefilledData.title;
+    if (journalInput && prefilledData.journal) journalInput.value = prefilledData.journal;
+    if (volumeInput && prefilledData.volume) volumeInput.value = prefilledData.volume;
+    if (issueInput && prefilledData.issue) issueInput.value = prefilledData.issue;
+    if (pagesInput && prefilledData.pages) pagesInput.value = prefilledData.pages;
+    if (yearInput && prefilledData.year) yearInput.value = prefilledData.year;
+}
+
+// 論文手動入力フォームを表示
+function showPaperManualForm() {
+    const paperTab = document.getElementById('paper-tab');
+    const manualTab = paperTab.querySelector('[data-method="paper-manual"]');
+    const manualContent = document.getElementById('paper-manual-input');
     
-    const firstEmptyField = manualForm.querySelector('input[value=""]') || document.getElementById('manual-paper-authors');
-    firstEmptyField.focus();
+    if (manualTab && manualContent) {
+        // タブを手動入力に切り替え
+        paperTab.querySelectorAll('.method-tab').forEach(tab => tab.classList.remove('active'));
+        paperTab.querySelectorAll('.input-method-content').forEach(content => content.classList.remove('active'));
+        
+        manualTab.classList.add('active');
+        manualContent.classList.add('active');
+        
+        // フォームを表示状態にする
+        manualContent.style.display = 'block';
+    }
 }
 
 // 手動入力から論文引用文献生成
@@ -1756,58 +2012,9 @@ function generatePaperCitation(authors, title, journal, volume, issue, pages, ye
 
 // 手動入力フォーム表示（Webサイト用）
 function showManualWebsiteForm(url) {
-    const websiteTab = document.getElementById('website-tab');
-    
-    const existingForm = websiteTab.querySelector('.manual-form');
-    if (existingForm) {
-        existingForm.style.display = 'block';
-        return;
-    }
-    
-    const manualForm = document.createElement('div');
-    manualForm.className = 'manual-form';
-    manualForm.innerHTML = `
-        <div class="manual-input-section">
-            <h3><i class="fas fa-edit"></i> 手動入力</h3>
-            <p class="help-text">自動取得ができませんでした。以下の項目を手動で入力してください。</p>
-            <div class="form-grid">
-                <div class="form-group">
-                    <label for="manual-title">ページタイトル:</label>
-                    <input type="text" id="manual-title" placeholder="例: 日田高校の概要">
-                </div>
-                <div class="form-group">
-                    <label for="manual-site">サイト名:</label>
-                    <input type="text" id="manual-site" placeholder="例: 大分県立日田高等学校" value="${getDomainName(url)}">
-                </div>
-                <div class="form-group">
-                    <label for="manual-url">URL:</label>
-                    <input type="text" id="manual-url" value="${url}" readonly>
-                </div>
-                <div class="form-group">
-                    <label for="manual-date">アクセス日:</label>
-                    <input type="text" id="manual-date" value="${getCurrentDateString()}" readonly>
-                </div>
-            </div>
-            <div class="form-actions">
-                <button id="generate-manual-citation" class="btn-primary">
-                    <i class="fas fa-create"></i> 引用文献を生成
-                </button>
-                <button id="cancel-manual" class="btn-secondary">
-                    <i class="fas fa-times"></i> キャンセル
-                </button>
-            </div>
-        </div>
-    `;
-    
-    websiteTab.appendChild(manualForm);
-    
-    document.getElementById('generate-manual-citation').addEventListener('click', generateManualCitation);
-    document.getElementById('cancel-manual').addEventListener('click', () => {
-        manualForm.style.display = 'none';
-        hideResults();
-    });
-    
-    document.getElementById('manual-title').focus();
+    // 固定の手動入力フォームに切り替えて、情報を事前入力
+    fillWebsiteManualForm('', getDomainName(url), url, getCurrentDateString());
+    showWebsiteManualForm();
 }
 
 // ドメイン名から推測されるサイト名を取得
@@ -1832,30 +2039,6 @@ function getCurrentDateString() {
     }).replace(/\//g, '.');
 }
 
-// 手動入力から引用文献生成
-function generateManualCitation() {
-    const title = document.getElementById('manual-title').value.trim();
-    const siteName = document.getElementById('manual-site').value.trim();
-    const url = document.getElementById('manual-url').value.trim();
-    const accessDate = document.getElementById('manual-date').value.trim();
-    
-    if (!title) {
-        showError('ページタイトルを入力してください。');
-        return;
-    }
-    
-    if (!siteName) {
-        showError('サイト名を入力してください。');
-        return;
-    }
-    
-    generateWebsiteCitation(title, siteName, url, accessDate);
-    
-    const manualForm = document.querySelector('.manual-form');
-    if (manualForm) {
-        manualForm.style.display = 'none';
-    }
-}
 
 // 結果表示
 function showResult(citation) {
