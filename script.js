@@ -432,6 +432,192 @@ async function extractWithProxy(url) {
     throw new Error('プロキシでの抽出に失敗しました');
 }
 
+// 構造化されたページデータ抽出関数
+function extractStructuredPageData(html, url) {
+    try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        
+        const extractedData = {
+            metadata: extractMetadata(doc),
+            content: extractContentElements(doc),
+            structured: extractStructuredData(doc),
+            url: url
+        };
+        
+        return extractedData;
+    } catch (error) {
+        console.error('Structured data extraction error:', error);
+        return null;
+    }
+}
+
+// メタデータ抽出
+function extractMetadata(doc) {
+    const metadata = {};
+    
+    // 基本的なメタデータ
+    const metaTags = [
+        { key: 'title', selector: 'title' },
+        { key: 'ogTitle', selector: 'meta[property="og:title"]', attr: 'content' },
+        { key: 'twitterTitle', selector: 'meta[name="twitter:title"]', attr: 'content' },
+        { key: 'siteName', selector: 'meta[property="og:site_name"]', attr: 'content' },
+        { key: 'description', selector: 'meta[name="description"]', attr: 'content' },
+        { key: 'ogDescription', selector: 'meta[property="og:description"]', attr: 'content' },
+        
+        // 学術論文用メタデータ
+        { key: 'citationTitle', selector: 'meta[name="citation_title"]', attr: 'content' },
+        { key: 'citationAuthors', selector: 'meta[name="citation_author"]', attr: 'content' },
+        { key: 'citationJournal', selector: 'meta[name="citation_journal_title"]', attr: 'content' },
+        { key: 'citationVolume', selector: 'meta[name="citation_volume"]', attr: 'content' },
+        { key: 'citationIssue', selector: 'meta[name="citation_issue"]', attr: 'content' },
+        { key: 'citationFirstPage', selector: 'meta[name="citation_firstpage"]', attr: 'content' },
+        { key: 'citationLastPage', selector: 'meta[name="citation_lastpage"]', attr: 'content' },
+        { key: 'citationDate', selector: 'meta[name="citation_publication_date"]', attr: 'content' },
+        { key: 'citationDoi', selector: 'meta[name="citation_doi"]', attr: 'content' },
+        
+        // Dublin Core
+        { key: 'dcTitle', selector: 'meta[name="DC.title"]', attr: 'content' },
+        { key: 'dcCreator', selector: 'meta[name="DC.creator"]', attr: 'content' },
+        { key: 'dcSource', selector: 'meta[name="DC.source"]', attr: 'content' },
+        { key: 'dcDate', selector: 'meta[name="DC.date"]', attr: 'content' }
+    ];
+    
+    metaTags.forEach(({ key, selector, attr }) => {
+        const element = doc.querySelector(selector);
+        if (element) {
+            metadata[key] = attr ? element.getAttribute(attr) : element.textContent?.trim();
+        }
+    });
+    
+    return metadata;
+}
+
+// コンテンツ要素抽出
+function extractContentElements(doc) {
+    const content = {};
+    
+    // タイトル要素の抽出（優先順位順）
+    const titleSelectors = [
+        'h1.title', 'h1.paper-title', 'h1.article-title', 'h1.entry-title',
+        '.title:not(.journal-title)', '.paper-title', '.article-title',
+        'h1', 'h2.title', '.main-title', '.content-title'
+    ];
+    content.titles = extractElementsBySelectors(doc, titleSelectors);
+    
+    // 著者要素の抽出
+    const authorSelectors = [
+        '.authors', '.author-list', '.paper-authors', '.author-names',
+        '.contributor-list', '.creators', '[class*="author"]:not([class*="journal"])',
+        '.byline', '.author-info'
+    ];
+    content.authors = extractElementsBySelectors(doc, authorSelectors);
+    
+    // 雑誌/サイト名要素の抽出
+    const journalSelectors = [
+        '.journal-title', '.publication-title', '.journal-name', '.source-title',
+        '.container-title', '.journal', '[class*="journal"][class*="title"]',
+        '.source', '.site-title', '.brand', '.logo'
+    ];
+    content.journals = extractElementsBySelectors(doc, journalSelectors);
+    
+    // 数値情報の抽出
+    const numberSelectors = [
+        '.volume', '.issue', '.pages', '.page-range', '[class*="volume"]',
+        '[class*="issue"]', '[class*="page"]'
+    ];
+    content.numbers = extractElementsBySelectors(doc, numberSelectors);
+    
+    return content;
+}
+
+// セレクタ配列から要素を抽出
+function extractElementsBySelectors(doc, selectors) {
+    const results = [];
+    
+    selectors.forEach(selector => {
+        const elements = doc.querySelectorAll(selector);
+        elements.forEach(element => {
+            const text = element.textContent?.trim();
+            if (text && text.length > 0 && text.length < 500) {
+                results.push({
+                    selector: selector,
+                    text: text,
+                    confidence: calculateConfidence(selector, text)
+                });
+            }
+        });
+    });
+    
+    // 信頼度順にソート
+    return results.sort((a, b) => b.confidence - a.confidence);
+}
+
+// 要素の信頼度を計算
+function calculateConfidence(selector, text) {
+    let confidence = 0;
+    
+    // セレクタベースの信頼度
+    if (selector.includes('citation_')) confidence += 10;
+    if (selector.includes('DC.')) confidence += 8;
+    if (selector.includes('og:')) confidence += 6;
+    if (selector.includes('h1')) confidence += 5;
+    if (selector.includes('.title')) confidence += 4;
+    if (selector.includes('#')) confidence += 3;
+    
+    // テキスト内容ベースの信頼度
+    if (text.length > 10 && text.length < 200) confidence += 2;
+    if (!/\d{4,}/.test(text) && text.length < 100) confidence += 1; // 長い数字列を含まない短いテキスト
+    
+    return confidence;
+}
+
+// 構造化データ抽出
+function extractStructuredData(doc) {
+    const structured = {};
+    
+    // JSON-LD抽出
+    const jsonLdElements = doc.querySelectorAll('script[type="application/ld+json"]');
+    structured.jsonLd = [];
+    jsonLdElements.forEach(element => {
+        try {
+            const data = JSON.parse(element.textContent);
+            structured.jsonLd.push(data);
+        } catch (error) {
+            // JSON解析エラーは無視
+        }
+    });
+    
+    // microdata抽出
+    structured.microdata = extractMicrodata(doc);
+    
+    return structured;
+}
+
+// microdata抽出
+function extractMicrodata(doc) {
+    const microdata = {};
+    const itemElements = doc.querySelectorAll('[itemscope]');
+    
+    itemElements.forEach(element => {
+        const itemType = element.getAttribute('itemtype');
+        if (itemType) {
+            const props = {};
+            const propElements = element.querySelectorAll('[itemprop]');
+            propElements.forEach(propElement => {
+                const propName = propElement.getAttribute('itemprop');
+                const propValue = propElement.textContent?.trim() || propElement.getAttribute('content');
+                if (propName && propValue) {
+                    props[propName] = propValue;
+                }
+            });
+            microdata[itemType] = props;
+        }
+    });
+    
+    return microdata;
+}
+
 // URL妥当性チェック関数
 function isValidUrl(string) {
     try {
@@ -442,14 +628,156 @@ function isValidUrl(string) {
     }
 }
 
-// J-STAGEの情報をAIで抽出
+// J-STAGEの情報をAIで抽出（改良版）
 async function extractJstageInfoWithAI(url) {
     if (!aiAssistEnabled || !geminiApiKey) {
         return null;
     }
 
     try {
-        const prompt = `あなたは学術論文の情報抽出の専門家です。以下のJ-STAGEのURLから、実際に存在する正確な論文情報のみを抽出してください。
+        // まずページデータを構造化して抽出
+        let structuredData = null;
+        try {
+            const proxyServices = [
+                `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+                `https://corsproxy.io/?${encodeURIComponent(url)}`
+            ];
+
+            for (const proxyUrl of proxyServices) {
+                try {
+                    const response = await fetch(proxyUrl);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.contents || data.data) {
+                            structuredData = extractStructuredPageData(data.contents || data.data, url);
+                            if (structuredData) break;
+                        }
+                    }
+                } catch (error) {
+                    continue;
+                }
+            }
+        } catch (error) {
+            console.warn('構造化データの取得に失敗:', error);
+        }
+
+        // 構造化データがある場合はそれをAIに提供
+        const prompt = structuredData 
+            ? createStructuredPromptForJstage(url, structuredData)
+            : createBasicPromptForJstage(url);
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                contents: [{
+                    parts: [{ text: prompt }]
+                }]
+            })
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+            
+            if (text) {
+                const jsonMatch = text.match(/```json\s*(.*?)\s*```/s) || text.match(/```\s*(.*?)\s*```/s);
+                const jsonText = jsonMatch ? jsonMatch[1] : text;
+                
+                try {
+                    const result = JSON.parse(jsonText);
+                    // 構造化データとの一致を検証
+                    if (structuredData) {
+                        return validateAndCorrectResult(result, structuredData);
+                    }
+                    return result;
+                } catch {
+                    return parsePartialInfo(text);
+                }
+            }
+        }
+    } catch (error) {
+        console.error('AI J-STAGE extraction error:', error);
+    }
+    
+    return null;
+}
+
+// 構造化データを使用したプロンプト作成
+function createStructuredPromptForJstage(url, structuredData) {
+    const metadataInfo = structuredData.metadata;
+    const contentInfo = structuredData.content;
+    
+    let extractedElements = "【ページから抽出された要素】\n";
+    
+    // メタデータ情報
+    if (metadataInfo.citationTitle) extractedElements += `- citation_title: "${metadataInfo.citationTitle}"\n`;
+    if (metadataInfo.citationAuthors) extractedElements += `- citation_author: "${metadataInfo.citationAuthors}"\n`;
+    if (metadataInfo.citationJournal) extractedElements += `- citation_journal: "${metadataInfo.citationJournal}"\n`;
+    if (metadataInfo.citationVolume) extractedElements += `- citation_volume: "${metadataInfo.citationVolume}"\n`;
+    if (metadataInfo.citationIssue) extractedElements += `- citation_issue: "${metadataInfo.citationIssue}"\n`;
+    if (metadataInfo.citationFirstPage) extractedElements += `- citation_firstpage: "${metadataInfo.citationFirstPage}"\n`;
+    if (metadataInfo.citationDate) extractedElements += `- citation_date: "${metadataInfo.citationDate}"\n`;
+    
+    // コンテンツ要素（上位3つまで）
+    if (contentInfo.titles?.length > 0) {
+        extractedElements += "- タイトル候補:\n";
+        contentInfo.titles.slice(0, 3).forEach(title => {
+            extractedElements += `  - "${title.text}" (信頼度: ${title.confidence})\n`;
+        });
+    }
+    
+    if (contentInfo.authors?.length > 0) {
+        extractedElements += "- 著者候補:\n";
+        contentInfo.authors.slice(0, 3).forEach(author => {
+            extractedElements += `  - "${author.text}" (信頼度: ${author.confidence})\n`;
+        });
+    }
+    
+    if (contentInfo.journals?.length > 0) {
+        extractedElements += "- 雑誌名候補:\n";
+        contentInfo.journals.slice(0, 3).forEach(journal => {
+            extractedElements += `  - "${journal.text}" (信頼度: ${journal.confidence})\n`;
+        });
+    }
+
+    return `あなたは学術論文の情報抽出の専門家です。以下のJ-STAGEページから抽出された構造化データを元に、正確な論文情報を選択してください。
+
+URL: ${url}
+
+${extractedElements}
+
+【重要な制約事項】
+1. 上記の抽出された要素の中から最も適切なものを選択してください
+2. 抽出された要素にない情報は絶対に追加しないでください
+3. 推測や想像で情報を補完してはいけません
+4. 不明な項目は空文字列にしてください
+
+【選択ルール】
+- 最も信頼度の高い要素を優先してください
+- citation_* メタデータがある場合はそれを最優先してください
+- 著者名は日本語表記を優先し、姓名の間にスペースを入れない
+- 複数著者は「・」で区切る
+
+以下の形式のJSONで返してください：
+{
+  "authors": "選択した著者名",
+  "title": "選択したタイトル",
+  "journal": "選択した雑誌名",
+  "volume": "選択した巻数",
+  "issue": "選択した号数",
+  "pages": "選択したページ範囲",
+  "year": "選択した発表年"
+}
+
+抽出された要素にない情報は必ず空文字列 "" にしてください。JSONのみを返してください。`;
+}
+
+// 基本的なプロンプト（構造化データなしの場合）
+function createBasicPromptForJstage(url) {
+    return `あなたは学術論文の情報抽出の専門家です。以下のJ-STAGEのURLから、実際に存在する正確な論文情報のみを抽出してください。
 
 URL: ${url}
 
@@ -479,39 +807,48 @@ URL: ${url}
 
 情報が確認できない項目は必ず空文字列 "" にしてください。
 JSONのみを返し、説明や推測は一切含めないでください。`;
+}
 
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [{ text: prompt }]
-                }]
-            })
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-            
-            if (text) {
-                const jsonMatch = text.match(/```json\s*(.*?)\s*```/s) || text.match(/```\s*(.*?)\s*```/s);
-                const jsonText = jsonMatch ? jsonMatch[1] : text;
-                
-                try {
-                    return JSON.parse(jsonText);
-                } catch {
-                    return parsePartialInfo(text);
-                }
-            }
-        }
-    } catch (error) {
-        console.error('AI J-STAGE extraction error:', error);
+// 結果の検証と修正
+function validateAndCorrectResult(aiResult, structuredData) {
+    const validated = { ...aiResult };
+    
+    // メタデータとの照合
+    const metadata = structuredData.metadata;
+    if (metadata.citationTitle && (!validated.title || validated.title === "")) {
+        validated.title = metadata.citationTitle;
+    }
+    if (metadata.citationAuthors && (!validated.authors || validated.authors === "")) {
+        validated.authors = metadata.citationAuthors.replace(/,\s*/g, '・');
+    }
+    if (metadata.citationJournal && (!validated.journal || validated.journal === "")) {
+        validated.journal = metadata.citationJournal;
+    }
+    if (metadata.citationVolume && (!validated.volume || validated.volume === "")) {
+        validated.volume = metadata.citationVolume;
+    }
+    if (metadata.citationIssue && (!validated.issue || validated.issue === "")) {
+        validated.issue = metadata.citationIssue;
     }
     
-    return null;
+    // 年の抽出
+    if (metadata.citationDate && (!validated.year || validated.year === "")) {
+        const yearMatch = metadata.citationDate.match(/(\d{4})/);
+        if (yearMatch) {
+            validated.year = yearMatch[1];
+        }
+    }
+    
+    // ページ情報の組み立て
+    if (metadata.citationFirstPage && (!validated.pages || validated.pages === "")) {
+        let pages = metadata.citationFirstPage;
+        if (metadata.citationLastPage && metadata.citationLastPage !== metadata.citationFirstPage) {
+            pages += `-${metadata.citationLastPage}`;
+        }
+        validated.pages = pages;
+    }
+    
+    return validated;
 }
 
 // 部分的な情報の解析
@@ -995,14 +1332,145 @@ async function extractWebsite() {
     }
 }
 
-// AI補助機能でWebサイト情報抽出
+// AI補助機能でWebサイト情報抽出（改良版）
 async function extractWebsiteInfoWithAI(url) {
     if (!aiAssistEnabled || !geminiApiKey) {
         return null;
     }
 
     try {
-        const prompt = `あなたはWebサイト情報抽出の専門家です。以下のURLにアクセスして、メインコンテンツから正確な情報を抽出してください。
+        // まずページデータを構造化して抽出
+        let structuredData = null;
+        try {
+            const proxyServices = [
+                `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+                `https://corsproxy.io/?${encodeURIComponent(url)}`
+            ];
+
+            for (const proxyUrl of proxyServices) {
+                try {
+                    const response = await fetch(proxyUrl);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.contents || data.data) {
+                            structuredData = extractStructuredPageData(data.contents || data.data, url);
+                            if (structuredData) break;
+                        }
+                    }
+                } catch (error) {
+                    continue;
+                }
+            }
+        } catch (error) {
+            console.warn('構造化データの取得に失敗:', error);
+        }
+
+        // 構造化データがある場合はそれをAIに提供
+        const prompt = structuredData 
+            ? createStructuredPromptForWebsite(url, structuredData)
+            : createBasicPromptForWebsite(url);
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                contents: [{
+                    parts: [{ text: prompt }]
+                }]
+            })
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+            
+            if (text) {
+                const jsonMatch = text.match(/```json\s*(.*?)\s*```/s) || text.match(/```\s*(.*?)\s*```/s);
+                const jsonText = jsonMatch ? jsonMatch[1] : text;
+                
+                try {
+                    const result = JSON.parse(jsonText);
+                    // 構造化データとの一致を検証
+                    if (structuredData) {
+                        return validateAndCorrectWebsiteResult(result, structuredData, url);
+                    }
+                    return result;
+                } catch {
+                    return {
+                        title: 'ページタイトル不明',
+                        siteName: getDomainName(url)
+                    };
+                }
+            }
+        }
+    } catch (error) {
+        console.error('AI website extraction error:', error);
+    }
+    
+    return null;
+}
+
+// 構造化データを使用したWebサイト用プロンプト作成
+function createStructuredPromptForWebsite(url, structuredData) {
+    const metadataInfo = structuredData.metadata;
+    const contentInfo = structuredData.content;
+    
+    let extractedElements = "【ページから抽出された要素】\n";
+    
+    // メタデータ情報
+    if (metadataInfo.title) extractedElements += `- <title>: "${metadataInfo.title}"\n`;
+    if (metadataInfo.ogTitle) extractedElements += `- og:title: "${metadataInfo.ogTitle}"\n`;
+    if (metadataInfo.twitterTitle) extractedElements += `- twitter:title: "${metadataInfo.twitterTitle}"\n`;
+    if (metadataInfo.siteName) extractedElements += `- og:site_name: "${metadataInfo.siteName}"\n`;
+    if (metadataInfo.description) extractedElements += `- description: "${metadataInfo.description}"\n`;
+    
+    // コンテンツ要素（上位3つまで）
+    if (contentInfo.titles?.length > 0) {
+        extractedElements += "- タイトル候補:\n";
+        contentInfo.titles.slice(0, 3).forEach(title => {
+            extractedElements += `  - "${title.text}" (信頼度: ${title.confidence}, セレクタ: ${title.selector})\n`;
+        });
+    }
+    
+    if (contentInfo.journals?.length > 0) {
+        extractedElements += "- サイト名候補:\n";
+        contentInfo.journals.slice(0, 3).forEach(site => {
+            extractedElements += `  - "${site.text}" (信頼度: ${site.confidence}, セレクタ: ${site.selector})\n`;
+        });
+    }
+
+    return `あなたはWebサイト情報抽出の専門家です。以下のページから抽出された構造化データを元に、正確なページ情報を選択してください。
+
+URL: ${url}
+
+${extractedElements}
+
+【重要な制約事項】
+1. 上記の抽出された要素の中から最も適切なものを選択してください
+2. 抽出された要素にない情報は絶対に追加しないでください
+3. 推測や想像で情報を補完してはいけません
+4. 不明な項目は空文字列にしてください
+
+【選択ルール】
+- 最も信頼度の高い要素を優先してください
+- メタデータ（og:title、<title>等）がある場合はそれを最優先してください
+- サイト名とページタイトルを混同しないでください
+- 明らかに関連記事やナビゲーションのタイトルは除外してください
+
+以下の形式のJSONで返してください：
+{
+  "title": "選択したページタイトル",
+  "siteName": "選択したサイト名"
+}
+
+抽出された要素にない情報は必ず空文字列 "" にしてください。JSONのみを返してください。`;
+}
+
+// 基本的なWebサイト用プロンプト（構造化データなしの場合）
+function createBasicPromptForWebsite(url) {
+    return `あなたはWebサイト情報抽出の専門家です。以下のURLにアクセスして、メインコンテンツから正確な情報を抽出してください。
 
 URL: ${url}
 
@@ -1032,42 +1500,44 @@ URL: ${url}
 
 情報が確認できない場合は、URLのドメイン名から推測してください。
 JSONのみを返し、説明や推測は一切含めないでください。`;
+}
 
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [{ text: prompt }]
-                }]
-            })
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-            
-            if (text) {
-                const jsonMatch = text.match(/```json\s*(.*?)\s*```/s) || text.match(/```\s*(.*?)\s*```/s);
-                const jsonText = jsonMatch ? jsonMatch[1] : text;
-                
-                try {
-                    return JSON.parse(jsonText);
-                } catch {
-                    return {
-                        title: 'ページタイトル不明',
-                        siteName: getDomainName(url)
-                    };
-                }
-            }
+// Webサイト結果の検証と修正
+function validateAndCorrectWebsiteResult(aiResult, structuredData, url) {
+    const validated = { ...aiResult };
+    
+    // メタデータとの照合
+    const metadata = structuredData.metadata;
+    
+    // タイトルの検証（優先順位: og:title > title > その他）
+    if (!validated.title || validated.title === "") {
+        if (metadata.ogTitle && metadata.ogTitle.length > 5 && metadata.ogTitle.length < 200) {
+            validated.title = metadata.ogTitle;
+        } else if (metadata.title && metadata.title.length > 5 && metadata.title.length < 200) {
+            validated.title = metadata.title;
+        } else if (structuredData.content.titles?.length > 0) {
+            validated.title = structuredData.content.titles[0].text;
         }
-    } catch (error) {
-        console.error('AI website extraction error:', error);
     }
     
-    return null;
+    // サイト名の検証
+    if (!validated.siteName || validated.siteName === "") {
+        if (metadata.siteName && metadata.siteName.length > 2 && metadata.siteName.length < 100) {
+            validated.siteName = metadata.siteName;
+        } else {
+            validated.siteName = getDomainName(url);
+        }
+    }
+    
+    // 結果の最終検証
+    if (!validated.title || validated.title === "") {
+        validated.title = "ページタイトル不明";
+    }
+    if (!validated.siteName || validated.siteName === "") {
+        validated.siteName = getDomainName(url);
+    }
+    
+    return validated;
 }
 
 // Webサイト情報解析
