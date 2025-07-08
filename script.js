@@ -26,6 +26,11 @@ const websiteLoading = document.getElementById('website-loading');
 const resultSection = document.getElementById('result-section');
 const citationResult = document.getElementById('citation-result');
 const copyButton = document.getElementById('copy-button');
+const editButton = document.getElementById('edit-button');
+const editSection = document.getElementById('edit-section');
+const citationEdit = document.getElementById('citation-edit');
+const saveEditButton = document.getElementById('save-edit');
+const cancelEditButton = document.getElementById('cancel-edit');
 const errorSection = document.getElementById('error-section');
 const errorText = document.getElementById('error-text');
 
@@ -89,6 +94,11 @@ function setupEventListeners() {
 
     // コピーボタン
     copyButton.addEventListener('click', copyCitation);
+    
+    // 編集ボタン
+    editButton.addEventListener('click', editCitation);
+    saveEditButton.addEventListener('click', saveEditedCitation);
+    cancelEditButton.addEventListener('click', cancelEdit);
 
     // サイドバー関連
     sidebarToggle.addEventListener('click', openSidebar);
@@ -1095,7 +1105,8 @@ function showManualPaperForm(sourceInfo, prefilledData = null) {
     
     const existingForm = paperTab.querySelector('.manual-form');
     if (existingForm) {
-        existingForm.remove();
+        existingForm.style.display = 'block';
+        return;
     }
     
     const isDOI = sourceInfo.startsWith('DOI:');
@@ -1180,7 +1191,7 @@ function showManualPaperForm(sourceInfo, prefilledData = null) {
     
     document.getElementById('generate-manual-paper-citation').addEventListener('click', generateManualPaperCitation);
     document.getElementById('cancel-manual-paper').addEventListener('click', () => {
-        manualForm.remove();
+        manualForm.style.display = 'none';
         hideResults();
     });
     
@@ -1223,7 +1234,10 @@ function generateManualPaperCitation() {
     
     generatePaperCitation(authors, title, journal, volume, issue, pages, year);
     
-    document.querySelector('.manual-form').remove();
+    const manualForm = document.querySelector('.manual-form');
+    if (manualForm) {
+        manualForm.style.display = 'none';
+    }
 }
 
 // 論文引用文献生成
@@ -1251,7 +1265,8 @@ function showManualWebsiteForm(url) {
     
     const existingForm = websiteTab.querySelector('.manual-form');
     if (existingForm) {
-        existingForm.remove();
+        existingForm.style.display = 'block';
+        return;
     }
     
     const manualForm = document.createElement('div');
@@ -1293,7 +1308,7 @@ function showManualWebsiteForm(url) {
     
     document.getElementById('generate-manual-citation').addEventListener('click', generateManualCitation);
     document.getElementById('cancel-manual').addEventListener('click', () => {
-        manualForm.remove();
+        manualForm.style.display = 'none';
         hideResults();
     });
     
@@ -1341,13 +1356,17 @@ function generateManualCitation() {
     
     generateWebsiteCitation(title, siteName, url, accessDate);
     
-    document.querySelector('.manual-form').remove();
+    const manualForm = document.querySelector('.manual-form');
+    if (manualForm) {
+        manualForm.style.display = 'none';
+    }
 }
 
 // 結果表示
 function showResult(citation) {
     citationResult.textContent = citation;
     resultSection.classList.remove('hidden');
+    editSection.classList.add('hidden');
     errorSection.classList.add('hidden');
 }
 
@@ -1361,7 +1380,48 @@ function showError(message) {
 // 結果とエラーを隠す
 function hideResults() {
     resultSection.classList.add('hidden');
+    editSection.classList.add('hidden');
     errorSection.classList.add('hidden');
+}
+
+// 引用文献編集開始
+function editCitation() {
+    const citation = citationResult.textContent;
+    citationEdit.value = citation;
+    editSection.classList.remove('hidden');
+    resultSection.classList.add('hidden');
+    citationEdit.focus();
+}
+
+// 編集した引用文献を保存
+function saveEditedCitation() {
+    const editedCitation = citationEdit.value.trim();
+    
+    if (!editedCitation) {
+        showError('引用文献が空欄です。内容を入力してください。');
+        return;
+    }
+    
+    citationResult.textContent = editedCitation;
+    editSection.classList.add('hidden');
+    resultSection.classList.remove('hidden');
+    
+    // 一時的に「保存完了」メッセージを表示
+    const originalText = saveEditButton.innerHTML;
+    saveEditButton.innerHTML = '<i class="fas fa-check"></i> 保存完了';
+    saveEditButton.classList.add('copied');
+    
+    setTimeout(() => {
+        saveEditButton.innerHTML = originalText;
+        saveEditButton.classList.remove('copied');
+    }, 2000);
+}
+
+// 編集をキャンセル
+function cancelEdit() {
+    editSection.classList.add('hidden');
+    resultSection.classList.remove('hidden');
+    citationEdit.value = '';
 }
 
 // 引用文献をコピー

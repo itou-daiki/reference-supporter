@@ -208,9 +208,30 @@
                 <h2><i class="fas fa-clipboard-list"></i> 生成された引用文献</h2>
                 <div class="result-container">
                     <div id="citation-result" class="citation-result"></div>
-                    <button id="copy-button" class="btn-secondary">
-                        <i class="fas fa-copy"></i> コピー
-                    </button>
+                    <div class="citation-actions">
+                        <button id="edit-button" class="btn-edit">
+                            <i class="fas fa-edit"></i> 編集
+                        </button>
+                        <button id="copy-button" class="btn-secondary">
+                            <i class="fas fa-copy"></i> コピー
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 編集フォーム -->
+            <div id="edit-section" class="edit-section hidden">
+                <h2><i class="fas fa-edit"></i> 引用文献を編集</h2>
+                <div class="edit-container">
+                    <textarea id="citation-edit" class="citation-edit" rows="4" placeholder="引用文献を編集してください"></textarea>
+                    <div class="edit-actions">
+                        <button id="save-edit" class="btn-primary">
+                            <i class="fas fa-save"></i> 保存
+                        </button>
+                        <button id="cancel-edit" class="btn-secondary">
+                            <i class="fas fa-times"></i> キャンセル
+                        </button>
+                    </div>
                 </div>
             </div>
 
