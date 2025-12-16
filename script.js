@@ -368,13 +368,31 @@ async function extractPaper() {
     showLoadingState(paperLoading);
 
     try {
-        const html = await extractWithProxy(url);
-        hideLoadingState(paperLoading);
-        debug_showHead(html); // Call the debug function
+        // URLから基本的な情報を抽出（フォールバック用）
+        const basicInfo = extractPaperInfoFromUrl(originalUrl);
+
+        try {
+            // プロキシ経由でHTMLを取得し、詳細情報を抽出
+            const extractedInfo = await extractWithProxy(url);
+            hideLoadingState(paperLoading);
+            
+            // 抽出した情報と基本情報をマージ
+            const combinedInfo = { ...basicInfo, ...extractedInfo };
+            
+            // ユーザーが確認・編集できるようにフォームに情報を設定して表示
+            showManualPaperForm(originalUrl, combinedInfo);
+
+        } catch (proxyError) {
+            // プロキシでの抽出に失敗した場合は、URLから抽出した基本情報のみでフォームを表示
+            hideLoadingState(paperLoading);
+            showManualPaperForm(originalUrl, basicInfo);
+            console.warn('Proxy extraction failed, falling back to basic info:', proxyError);
+        }
 
     } catch (error) {
         hideLoadingState(paperLoading);
-        showError(`エラーが発生しました: ${error.message}`);
+        // その他のエラーが発生した場合
+        showManualPaperForm(originalUrl);
         console.error('Paper extraction error:', error);
     }
 }
@@ -432,7 +450,7 @@ async function extractWithProxy(url) {
                     : config.parseResponse(await response.json());
 
                 if (htmlContent && htmlContent.length > 100) {
-                    return htmlContent; // Return the raw HTML for debugging
+                    return parsePaperInfoFromHtml(htmlContent, url);
                 }
             }
         } catch (error) {
@@ -509,51 +527,43 @@ async function extractWebsiteWithProxy(url) {
     throw new Error('プロキシでの抽出に失敗しました');
 }
 
-// TEMPORARY DEBUG FUNCTION
-function debug_showHead(html) {
-    try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-        const head = doc.querySelector('head');
-        if (head) {
-            const formattedHtml = head.innerHTML.replace(/</g, '\n&lt;').replace(/>/g, '>\n');
-            showResult(`--- DEBUG: HEAD CONTENT ---\n${formattedHtml}`);
-        } else {
-            showError("DEBUG: Could not find <head> element.");
-        }
-    } catch (e) {
-        showError(`DEBUG: Error parsing HTML: ${e.message}`);
-    }
-}
-
 // HTMLから論文情報を解析
 function parsePaperInfoFromHtml(html, url) {
     const data = extractStructuredPageData(html, url);
     if (!data) return {};
 
     const meta = data.metadata;
-    let authorsArray = [];
 
-    if (meta.citationAuthors) {
-        authorsArray = Array.isArray(meta.citationAuthors) ? meta.citationAuthors : [meta.citationAuthors];
+    // Priority: Japanese Tag -> OpenGraph -> DC -> English Citation Tag -> Page Title
+    const title = meta.metaTitle || meta.ogTitle || meta.dcTitle || meta.citationTitle || meta.pageTitle || '';
+
+    let authorsArray = [];
+    // Priority: Japanese 'authors' tag -> DC -> English 'citation_author'
+    if (meta.authors) {
+        authorsArray = Array.isArray(meta.authors) ? meta.authors : [meta.authors];
     } else if (meta.dcCreator) {
         authorsArray = Array.isArray(meta.dcCreator) ? meta.dcCreator : [meta.dcCreator];
+    } else if (meta.citationAuthors) {
+        authorsArray = Array.isArray(meta.citationAuthors) ? meta.citationAuthors : [meta.citationAuthors];
     }
-
     const authors = authorsArray.join('・');
-    const title = meta.citationTitle || meta.ogTitle || meta.twitterTitle || meta.dcTitle || '';
-    const journal = meta.citationJournal || meta.siteName || meta.ogSiteName || meta.dcSource || '';
 
-    let year = '';
-    if (meta.citationDate) {
-        year = meta.citationDate.split('/')[0];
-    } else if (meta.dcDate) {
-        year = meta.dcDate.split('-')[0];
-    }
+    // Priority: Japanese Tag -> OpenGraph -> DC -> English Citation Tag
+    const journal = meta.journal_title || meta.ogSiteName || meta.dcSource || meta.citationJournal || '';
+
+    // For numeric/date data, Japanese and English tags are often the same, but we prioritize the specific ones.
+    const year = (meta.publication_date || meta.citationDate || meta.dcDate || '').split(/[\/-]/)[0];
+    const volume = meta.volume || meta.citationVolume || '';
+    const issue = meta.issue || meta.citationIssue || '';
+    const doi = meta.doi || meta.citationDoi || '';
 
     let pages = '';
-    if (meta.citationFirstPage && meta.citationLastPage) {
-        pages = `${meta.citationFirstPage}-${meta.citationLastPage}`;
+    if (meta.firstpage && meta.lastpage) {
+        pages = `${meta.firstpage}-${meta.lastpage}`;
+    } else if (meta.citationFirstPage && meta.citationLastPage) {
+        pages = `${meta.firstpage}-${meta.lastpage}`;
+    } else if (meta.firstpage) {
+        pages = meta.firstpage;
     } else if (meta.citationFirstPage) {
         pages = meta.citationFirstPage;
     }
@@ -562,11 +572,11 @@ function parsePaperInfoFromHtml(html, url) {
         authors: authors,
         title: title,
         journal: journal,
-        volume: meta.citationVolume || '',
-        issue: meta.citationIssue || '',
+        volume: volume,
+        issue: issue,
         pages: pages,
         year: year,
-        doi: meta.citationDoi || ''
+        doi: doi
     };
 }
 
@@ -593,18 +603,14 @@ function extractStructuredPageData(html, url) {
 // メタデータ抽出
 function extractMetadata(doc) {
     const metadata = {};
-    const multiValueKeys = ['citationAuthors', 'dcCreator'];
+    const multiValueKeys = ['citationAuthors', 'dcCreator', 'authors', 'keywords', 'references']; // Added more multi-keys
     
-    // 基本的なメタデータ
     const metaTags = [
-        { key: 'title', selector: 'title' },
+        // The order here doesn't matter, parsePaperInfoFromHtml will handle priority
+        { key: 'pageTitle', selector: 'title' },
         { key: 'ogTitle', selector: 'meta[property="og:title"]', attr: 'content' },
         { key: 'twitterTitle', selector: 'meta[name="twitter:title"]', attr: 'content' },
-        { key: 'siteName', selector: 'meta[property="og:site_name"]', attr: 'content' },
-        { key: 'description', selector: 'meta[name="description"]', attr: 'content' },
-        { key: 'ogDescription', selector: 'meta[property="og:description"]', attr: 'content' },
-        
-        // 学術論文用メタデータ
+        { key: 'ogSiteName', selector: 'meta[property="og:site_name"]', attr: 'content' },
         { key: 'citationTitle', selector: 'meta[name="citation_title"]', attr: 'content' },
         { key: 'citationAuthors', selector: 'meta[name="citation_author"]', attr: 'content' },
         { key: 'citationJournal', selector: 'meta[name="citation_journal_title"]', attr: 'content' },
@@ -614,41 +620,42 @@ function extractMetadata(doc) {
         { key: 'citationLastPage', selector: 'meta[name="citation_lastpage"]', attr: 'content' },
         { key: 'citationDate', selector: 'meta[name="citation_publication_date"]', attr: 'content' },
         { key: 'citationDoi', selector: 'meta[name="citation_doi"]', attr: 'content' },
-        
-        // Dublin Core
         { key: 'dcTitle', selector: 'meta[name="DC.title"]', attr: 'content' },
         { key: 'dcCreator', selector: 'meta[name="DC.creator"]', attr: 'content' },
         { key: 'dcSource', selector: 'meta[name="DC.source"]', attr: 'content' },
-        { key: 'dcDate', selector: 'meta[name="DC.date"]', attr: 'content' }
+        { key: 'dcDate', selector: 'meta[name="DC.date"]', attr: 'content' },
+        
+        // J-STAGE specific tags discovered during debugging
+        { key: 'metaTitle', selector: 'meta[name="title"]', attr: 'content' },
+        { key: 'journal_title', selector: 'meta[name="journal_title"]', attr: 'content' },
+        { key: 'authors', selector: 'meta[name="authors"]', attr: 'content' },
+        { key: 'publication_date', selector: 'meta[name="publication_date"]', attr: 'content' },
+        { key: 'volume', selector: 'meta[name="volume"]', attr: 'content' },
+        { key: 'issue', selector: 'meta[name="issue"]', attr: 'content' },
+        { key: 'firstpage', selector: 'meta[name="firstpage"]', attr: 'content' },
+        { key: 'lastpage', selector: 'meta[name="lastpage"]', attr: 'content' },
+        { key: 'doi', selector: 'meta[name="doi"]', attr: 'content' },
+        { key: 'keywords', selector: 'meta[name="keywords"]', attr: 'content' },
+        { key: 'references', selector: 'meta[name="references"]', attr: 'content' }
     ];
     
     metaTags.forEach(({ key, selector, attr }) => {
+        const elements = doc.querySelectorAll(selector);
+        if (elements.length === 0) return;
+
+        const values = Array.from(elements)
+            .map(el => attr ? el.getAttribute(attr) : el.textContent?.trim())
+            .filter(Boolean);
+
+        if (values.length === 0) return;
+
         if (multiValueKeys.includes(key)) {
-            // Handle multi-value keys (like authors)
-            const elements = doc.querySelectorAll(selector);
-            if (elements.length > 0) {
-                metadata[key] = Array.from(elements)
-                    .map(el => attr ? el.getAttribute(attr) : el.textContent?.trim())
-                    .filter(Boolean);
-            }
+            metadata[key] = values;
         } else {
-            // Handle single-value keys, prioritizing Japanese
-            let element = null;
-            // Try to find the Japanese version first
-            element = doc.querySelector(`${selector}[xml\\:lang="ja"]`) || doc.querySelector(`${selector}[lang="ja"]`);
-            
-            // If no Japanese version, find the first one without any lang attribute (neutral)
-            if (!element) {
-                element = doc.querySelector(`${selector}:not([xml\\:lang]):not([lang])`);
-            }
-            
-            // If still nothing, just grab the first one available
-            if (!element) {
-                element = doc.querySelector(selector);
-            }
-            
-            if (element) {
-                metadata[key] = attr ? element.getAttribute(attr) : element.textContent?.trim();
+            // For single-value keys, just take the first one. 
+            // The priority logic will be in the calling function.
+            if (!metadata[key]) {
+                metadata[key] = values[0];
             }
         }
     });
