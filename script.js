@@ -937,11 +937,21 @@ async function extractJstageInfoWithAI(url) {
         } else {
             const errorText = await response.text();
             console.error('Gemini API呼び出しに失敗:', response.status, errorText);
+
+            // ユーザーに分かりやすいエラーメッセージを表示
+            if (response.status === 429) {
+                console.warn('⚠️ Gemini APIのレート制限に達しました。しばらく待ってから再度お試しいただくか、手動入力をご利用ください。');
+            } else if (response.status === 401 || response.status === 403) {
+                console.warn('⚠️ APIキーが無効です。設定画面で正しいAPIキーを入力してください。');
+            } else {
+                console.warn(`⚠️ API呼び出しに失敗しました (ステータス: ${response.status})。手動入力をご利用ください。`);
+            }
         }
     } catch (error) {
         console.error('AI J-STAGE抽出中にエラーが発生:', error.message || error);
+        console.warn('⚠️ ネットワークエラーが発生しました。インターネット接続を確認してください。');
     }
-    
+
     return null;
 }
 
@@ -1481,9 +1491,19 @@ DOIが見つからない場合は "NOT_FOUND" と返してください。`;
         } else {
             const errorText = await response.text();
             console.error('Gemini API呼び出しに失敗:', response.status, errorText);
+
+            // ユーザーに分かりやすいエラーメッセージを表示
+            if (response.status === 429) {
+                console.warn('⚠️ Gemini APIのレート制限に達しました。しばらく待ってから再度お試しいただくか、手動入力をご利用ください。');
+            } else if (response.status === 401 || response.status === 403) {
+                console.warn('⚠️ APIキーが無効です。設定画面で正しいAPIキーを入力してください。');
+            } else {
+                console.warn(`⚠️ API呼び出しに失敗しました (ステータス: ${response.status})。手動入力をご利用ください。`);
+            }
         }
     } catch (error) {
         console.error('AIによるDOI抽出中にエラーが発生:', error.message || error);
+        console.warn('⚠️ ネットワークエラーが発生しました。インターネット接続を確認してください。');
     }
 
     return null;
@@ -1669,11 +1689,21 @@ async function extractWebsiteInfoWithAI(url) {
         } else {
             const errorText = await response.text();
             console.error('Gemini API呼び出しに失敗:', response.status, errorText);
+
+            // ユーザーに分かりやすいエラーメッセージを表示
+            if (response.status === 429) {
+                console.warn('⚠️ Gemini APIのレート制限に達しました。しばらく待ってから再度お試しいただくか、手動入力をご利用ください。');
+            } else if (response.status === 401 || response.status === 403) {
+                console.warn('⚠️ APIキーが無効です。設定画面で正しいAPIキーを入力してください。');
+            } else {
+                console.warn(`⚠️ API呼び出しに失敗しました (ステータス: ${response.status})。手動入力をご利用ください。`);
+            }
         }
     } catch (error) {
         console.error('AIによるWebサイト抽出中にエラーが発生:', error.message || error);
+        console.warn('⚠️ ネットワークエラーが発生しました。インターネット接続を確認してください。');
     }
-    
+
     return null;
 }
 
