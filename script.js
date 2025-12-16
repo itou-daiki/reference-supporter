@@ -36,10 +36,6 @@ const errorText = document.getElementById('error-text');
 document.addEventListener('DOMContentLoaded', function() {
     setupEventListeners();
     initializeManualForms();
-    
-    // デバッグ: 要素の存在確認
-    console.log('Edit button element:', editButton);
-    console.log('Edit section element:', editSection);
 });
 
 // 手動入力フォームの初期化
