@@ -901,14 +901,22 @@ function parseWebsiteInfo(html, url) {
         // JSON-LD構造化データを抽出
         const structuredData = extractStructuredData(doc);
         let jsonLdTitle = null;
+        let jsonLdSiteName = null;
 
         if (structuredData.jsonLd && structuredData.jsonLd.length > 0) {
             for (const data of structuredData.jsonLd) {
+                // Article, NewsArticle, BlogPostingなど
                 if (data.headline) jsonLdTitle = data.headline;
                 if (data.name && !jsonLdTitle) jsonLdTitle = data.name;
+
+                // Publisherやサイト情報
+                if (data.publisher?.name) jsonLdSiteName = data.publisher.name;
+                if (data.author?.name && !jsonLdSiteName) jsonLdSiteName = data.author.name;
+                if (data['@type'] === 'WebSite' && data.name) jsonLdSiteName = data.name;
             }
         }
 
+        // 拡張されたタイトル抽出（優先順位順）
         const titleSources = [
             { value: jsonLdTitle, priority: 10, source: 'JSON-LD' },
             { value: doc.querySelector('meta[property="og:title"]')?.getAttribute('content'), priority: 9, source: 'og:title' },
@@ -922,31 +930,105 @@ function parseWebsiteInfo(html, url) {
             { value: doc.querySelector('title')?.textContent?.trim(), priority: 3, source: 'title' }
         ];
 
-        let debugOutput = "--- DEBUG: Title Candidates ---\n\n";
-        
+        // 拡張されたサイト名抽出（優先順位順）
+        const siteNameSources = [
+            { value: jsonLdSiteName, priority: 10, source: 'JSON-LD' },
+            { value: doc.querySelector('meta[property="og:site_name"]')?.getAttribute('content'), priority: 9, source: 'og:site_name' },
+            { value: doc.querySelector('meta[property="article:publisher"]')?.getAttribute('content'), priority: 8, source: 'article:publisher' },
+            { value: doc.querySelector('meta[name="application-name"]')?.getAttribute('content'), priority: 7, source: 'application-name' },
+            { value: doc.querySelector('meta[name="DC.publisher"]')?.getAttribute('content'), priority: 6, source: 'DC.publisher' },
+            { value: doc.querySelector('meta[name="site_name"]')?.getAttribute('content'), priority: 5, source: 'site_name' },
+            { value: doc.querySelector('.site-title')?.textContent?.trim(), priority: 4, source: '.site-title' },
+            { value: doc.querySelector('.site-name')?.textContent?.trim(), priority: 4, source: '.site-name' },
+            { value: doc.querySelector('.brand')?.textContent?.trim(), priority: 3, source: '.brand' },
+            { value: doc.querySelector('header .logo')?.textContent?.trim(), priority: 3, source: 'header .logo' }
+        ];
+
+        // 最適なタイトルを選択（信頼度スコアリング）
+        let bestTitle = null;
+        let bestTitleScore = -100;
+
         for (const source of titleSources) {
             if (!source.value) continue;
 
             const title = source.value;
             let score = source.priority;
-            let penalty = 0;
-
+            
+            // お知らせやプライバシー関連のタイトルにペナルティを課す
             const rejectPatterns = ['お知らせ', '欧州経済領域', 'EEA', 'Cookie', 'クッキー', 'プライバシー'];
             if (rejectPatterns.some(pattern => title.includes(pattern))) {
-                score -= 10;
-                penalty = -10;
+                score -= 10; // Apply a heavy penalty
             }
 
+            // 品質による追加スコア
             if (title.length > 10 && title.length < 150) score += 3;
             if (!title.includes('404') && !title.includes('Error') && !title.includes('Page Not Found')) score += 2;
             if (!/^\s*$/.test(title)) score += 1;
 
-            debugOutput += `Title: "${title}"\n`;
-            debugOutput += `Source: ${source.source}, Priority: ${source.priority}, Penalty: ${penalty}, Final Score: ${score}\n\n`;
+            if (score > bestTitleScore) {
+                bestTitleScore = score;
+                bestTitle = title;
+            }
         }
 
-        showResult(debugOutput);
+        // 最適なサイト名を選択（信頼度スコアリング）
+        let bestSiteName = null;
+        let bestSiteScore = 0;
 
+        for (const source of siteNameSources) {
+            if (!source.value) continue;
+
+            const name = source.value;
+            let score = source.priority;
+
+            // 品質による追加スコア
+            if (name.length > 2 && name.length < 50) score += 2;
+            if (!/\d{4,}/.test(name)) score += 1; // 長い数字列を含まない
+
+            if (score > bestSiteScore) {
+                bestSiteScore = score;
+                bestSiteName = name;
+            }
+        }
+
+        // タイトルからサイト名を分離（"ページタイトル | サイト名" 形式の処理）
+        let finalPageTitle = bestTitle || 'ページタイトル不明';
+        let finalSiteName = bestSiteName || getDomainName(url);
+
+        if (finalPageTitle && !bestSiteName) {
+            const separators = [' | ', ' - ', ' – ', ' — ', ' :: ', ' » '];
+            for (const sep of separators) {
+                if (finalPageTitle.includes(sep)) {
+                    const parts = finalPageTitle.split(sep);
+                    if (parts.length === 2) {
+                        // 通常は "ページタイトル | サイト名" の形式
+                        finalPageTitle = parts[0].trim();
+                        finalSiteName = parts[1].trim();
+                        break;
+                    } else if (parts.length > 2) {
+                        // "サイト名 | カテゴリ | ページタイトル" のような場合は最後を使用
+                        finalPageTitle = parts[parts.length - 1].trim();
+                        finalSiteName = parts[0].trim();
+                        break;
+                    }
+                }
+            }
+        } else if (finalPageTitle && bestSiteName) {
+            // タイトルにサイト名が含まれている場合は削除
+            const separators = [' | ', ' - ', ' – ', ' — ', ' :: ', ' » '];
+            for (const sep of separators) {
+                if (finalPageTitle.includes(sep + finalSiteName)) {
+                    finalPageTitle = finalPageTitle.replace(sep + finalSiteName, '').trim();
+                    break;
+                } else if (finalPageTitle.includes(finalSiteName + sep)) {
+                    finalPageTitle = finalPageTitle.replace(finalSiteName + sep, '').trim();
+                    break;
+                }
+            }
+        }
+
+        const currentDate = getCurrentDateString();
+        generateWebsiteCitation(finalPageTitle, finalSiteName, url, currentDate);
     } catch (error) {
         showError('Webサイト情報の解析中にエラーが発生しました。');
         console.error('Website parsing error:', error);
