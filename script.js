@@ -383,21 +383,56 @@ async function extractPaper() {
 
 // 共通のプロキシ抽出関数（論文用）
 async function extractWithProxy(url) {
-    const proxyServices = [
-        `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-        `https://corsproxy.io/?${encodeURIComponent(url)}`
+    // 複数のプロキシサービスを試行（優先順位順）
+    const proxyConfigs = [
+        {
+            url: `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+            parseResponse: (data) => data.contents,
+            timeout: 10000
+        },
+        {
+            url: `https://corsproxy.io/?${encodeURIComponent(url)}`,
+            parseResponse: (text) => text,
+            timeout: 10000,
+            isText: true
+        },
+        {
+            url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+            parseResponse: (text) => text,
+            timeout: 10000,
+            isText: true
+        },
+        {
+            url: `https://proxy.cors.sh/${url}`,
+            parseResponse: (text) => text,
+            timeout: 10000,
+            isText: true,
+            headers: { 'x-cors-api-key': 'temp_' }
+        }
     ];
 
-    for (const proxyUrl of proxyServices) {
+    for (const config of proxyConfigs) {
         try {
-            const response = await fetch(proxyUrl);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), config.timeout);
+
+            const response = await fetch(config.url, {
+                signal: controller.signal,
+                headers: config.headers || {}
+            });
+            clearTimeout(timeoutId);
+
             if (response.ok) {
-                const data = await response.json();
-                if (data.contents || data.data) {
-                    return parsePaperInfoFromHtml(data.contents || data.data, url);
+                const htmlContent = config.isText
+                    ? await response.text()
+                    : config.parseResponse(await response.json());
+
+                if (htmlContent && htmlContent.length > 100) {
+                    return parsePaperInfoFromHtml(htmlContent, url);
                 }
             }
         } catch (error) {
+            // タイムアウトやネットワークエラーは次のプロキシを試行
             continue;
         }
     }
@@ -407,21 +442,56 @@ async function extractWithProxy(url) {
 
 // Webサイト抽出用のプロキシ関数（HTML文字列を返す）
 async function extractWebsiteWithProxy(url) {
-    const proxyServices = [
-        `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-        `https://corsproxy.io/?${encodeURIComponent(url)}`
+    // 複数のプロキシサービスを試行（優先順位順）
+    const proxyConfigs = [
+        {
+            url: `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+            parseResponse: (data) => data.contents,
+            timeout: 10000
+        },
+        {
+            url: `https://corsproxy.io/?${encodeURIComponent(url)}`,
+            parseResponse: (text) => text,
+            timeout: 10000,
+            isText: true
+        },
+        {
+            url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+            parseResponse: (text) => text,
+            timeout: 10000,
+            isText: true
+        },
+        {
+            url: `https://proxy.cors.sh/${url}`,
+            parseResponse: (text) => text,
+            timeout: 10000,
+            isText: true,
+            headers: { 'x-cors-api-key': 'temp_' }
+        }
     ];
 
-    for (const proxyUrl of proxyServices) {
+    for (const config of proxyConfigs) {
         try {
-            const response = await fetch(proxyUrl);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), config.timeout);
+
+            const response = await fetch(config.url, {
+                signal: controller.signal,
+                headers: config.headers || {}
+            });
+            clearTimeout(timeoutId);
+
             if (response.ok) {
-                const data = await response.json();
-                if (data.contents || data.data) {
-                    return data.contents || data.data; // HTML文字列をそのまま返す
+                const htmlContent = config.isText
+                    ? await response.text()
+                    : config.parseResponse(await response.json());
+
+                if (htmlContent && htmlContent.length > 100) {
+                    return htmlContent; // HTML文字列をそのまま返す
                 }
             }
         } catch (error) {
+            // タイムアウトやネットワークエラーは次のプロキシを試行
             continue;
         }
     }
