@@ -354,6 +354,14 @@ async function extractPaper() {
         return;
     }
 
+    // Attempt to extract DOI first, regardless of J-STAGE URL.
+    const extractedDoi = extractDoiFromUrl(url);
+    if (extractedDoi) {
+        showLoadingState(paperLoading); // Show loading before DOI extraction
+        await extractFromDOIInternal(extractedDoi, `URL: ${url}`);
+        return; // Exit after processing as DOI
+    }
+
     if (!url.includes('jstage.jst.go.jp')) {
         showError('J-STAGEのURLを入力してください。他のサイトのURLは対応していません。');
         return;
