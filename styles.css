@@ -1024,6 +1024,63 @@ input:checked + .slider:before {
     color: white !important;
 }
 
+/* 引用形式ルール */
+.protocol-section {
+    background: #fff;
+    border-radius: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    border: 1px solid #e9ecef;
+    overflow: hidden;
+}
+
+.protocol-section summary {
+    padding: 20px;
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #333;
+    cursor: pointer;
+    outline: none;
+    transition: background 0.2s ease;
+    display: flex;
+    align-items: center;
+}
+
+.protocol-section summary:hover {
+    background: #f8f9fa;
+}
+
+.protocol-section summary i {
+    margin-right: 12px;
+    color: #1e90ff;
+}
+
+.protocol-section[open] summary {
+    border-bottom: 1px solid #e9ecef;
+}
+
+.protocol-content {
+    padding: 20px 30px 30px 30px;
+    color: #666;
+    font-size: 0.9rem;
+    line-height: 1.7;
+}
+
+.protocol-content p {
+    margin-bottom: 15px;
+}
+
+.protocol-content p:last-child {
+    margin-bottom: 0;
+}
+
+.protocol-content strong {
+    font-weight: 600;
+    color: #333;
+    display: inline-block;
+    margin-bottom: 5px;
+}
+
 /* 隠す用のクラス */
 .hidden {
     display: none !important;
