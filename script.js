@@ -491,7 +491,7 @@ async function extractPaper() {
     }
 }
 
-// 共通のプロキシ抽出関数
+// 共通のプロキシ抽出関数（論文用）
 async function extractWithProxy(url) {
     const proxyServices = [
         `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
@@ -511,7 +511,31 @@ async function extractWithProxy(url) {
             continue;
         }
     }
-    
+
+    throw new Error('プロキシでの抽出に失敗しました');
+}
+
+// Webサイト抽出用のプロキシ関数（HTML文字列を返す）
+async function extractWebsiteWithProxy(url) {
+    const proxyServices = [
+        `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+        `https://corsproxy.io/?${encodeURIComponent(url)}`
+    ];
+
+    for (const proxyUrl of proxyServices) {
+        try {
+            const response = await fetch(proxyUrl);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.contents || data.data) {
+                    return data.contents || data.data; // HTML文字列をそのまま返す
+                }
+            }
+        } catch (error) {
+            continue;
+        }
+    }
+
     throw new Error('プロキシでの抽出に失敗しました');
 }
 
@@ -834,7 +858,13 @@ function isValidUrl(string) {
 
 // J-STAGEの情報をAIで抽出（改良版）
 async function extractJstageInfoWithAI(url) {
-    if (!aiAssistEnabled || !geminiApiKey) {
+    if (!aiAssistEnabled) {
+        console.log('AI補助が無効です');
+        return null;
+    }
+
+    if (!geminiApiKey) {
+        console.warn('Gemini APIキーが設定されていません。AI補助機能を使用するには、APIキーを設定してください。');
         return null;
     }
 
@@ -885,11 +915,11 @@ async function extractJstageInfoWithAI(url) {
         if (response.ok) {
             const data = await response.json();
             const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-            
+
             if (text) {
                 const jsonMatch = text.match(/```json\s*(.*?)\s*```/s) || text.match(/```\s*(.*?)\s*```/s);
                 const jsonText = jsonMatch ? jsonMatch[1] : text;
-                
+
                 try {
                     const result = JSON.parse(jsonText);
                     // 構造化データとの一致を検証
@@ -897,13 +927,19 @@ async function extractJstageInfoWithAI(url) {
                         return validateAndCorrectResult(result, structuredData);
                     }
                     return result;
-                } catch {
+                } catch (parseError) {
+                    console.warn('JSON解析に失敗しましたが、部分的な情報を抽出します:', parseError);
                     return parsePartialInfo(text);
                 }
+            } else {
+                console.warn('AIから有効なレスポンスが得られませんでした');
             }
+        } else {
+            const errorText = await response.text();
+            console.error('Gemini API呼び出しに失敗:', response.status, errorText);
         }
     } catch (error) {
-        console.error('AI J-STAGE extraction error:', error);
+        console.error('AI J-STAGE抽出中にエラーが発生:', error.message || error);
     }
     
     return null;
@@ -1401,7 +1437,13 @@ async function extractFromDOIInternal(doi, sourceInfo) {
 
 // AI補助機能でDOI抽出
 async function extractDoiWithAI(url) {
-    if (!aiAssistEnabled || !geminiApiKey) {
+    if (!aiAssistEnabled) {
+        console.log('AI補助が無効です');
+        return null;
+    }
+
+    if (!geminiApiKey) {
+        console.warn('Gemini APIキーが設定されていません。AI補助機能を使用するには、APIキーを設定してください。');
         return null;
     }
 
@@ -1428,15 +1470,22 @@ DOIが見つからない場合は "NOT_FOUND" と返してください。`;
         if (response.ok) {
             const data = await response.json();
             const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-            
+
             if (text && text !== 'NOT_FOUND' && isValidDoi(text)) {
                 return text;
+            } else if (!text) {
+                console.warn('AIから有効なレスポンスが得られませんでした');
+            } else {
+                console.log('AIがDOIを検出できませんでした');
             }
+        } else {
+            const errorText = await response.text();
+            console.error('Gemini API呼び出しに失敗:', response.status, errorText);
         }
     } catch (error) {
-        console.error('AI DOI extraction error:', error);
+        console.error('AIによるDOI抽出中にエラーが発生:', error.message || error);
     }
-    
+
     return null;
 }
 
@@ -1521,9 +1570,9 @@ async function extractWebsite() {
         }
 
         try {
-            const extractedInfo = await extractWithProxy(url);
+            const htmlContent = await extractWebsiteWithProxy(url);
             hideLoadingState(websiteLoading);
-            parseWebsiteInfo(extractedInfo, url);
+            parseWebsiteInfo(htmlContent, url);
         } catch {
             hideLoadingState(websiteLoading);
             showManualWebsiteForm(url);
@@ -1538,7 +1587,13 @@ async function extractWebsite() {
 
 // AI補助機能でWebサイト情報抽出（改良版）
 async function extractWebsiteInfoWithAI(url) {
-    if (!aiAssistEnabled || !geminiApiKey) {
+    if (!aiAssistEnabled) {
+        console.log('AI補助が無効です');
+        return null;
+    }
+
+    if (!geminiApiKey) {
+        console.warn('Gemini APIキーが設定されていません。AI補助機能を使用するには、APIキーを設定してください。');
         return null;
     }
 
@@ -1589,11 +1644,11 @@ async function extractWebsiteInfoWithAI(url) {
         if (response.ok) {
             const data = await response.json();
             const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-            
+
             if (text) {
                 const jsonMatch = text.match(/```json\s*(.*?)\s*```/s) || text.match(/```\s*(.*?)\s*```/s);
                 const jsonText = jsonMatch ? jsonMatch[1] : text;
-                
+
                 try {
                     const result = JSON.parse(jsonText);
                     // 構造化データとの一致を検証
@@ -1601,16 +1656,22 @@ async function extractWebsiteInfoWithAI(url) {
                         return validateAndCorrectWebsiteResult(result, structuredData, url);
                     }
                     return result;
-                } catch {
+                } catch (parseError) {
+                    console.warn('Webサイト情報のJSON解析に失敗:', parseError);
                     return {
                         title: 'ページタイトル不明',
                         siteName: getDomainName(url)
                     };
                 }
+            } else {
+                console.warn('AIから有効なレスポンスが得られませんでした');
             }
+        } else {
+            const errorText = await response.text();
+            console.error('Gemini API呼び出しに失敗:', response.status, errorText);
         }
     } catch (error) {
-        console.error('AI website extraction error:', error);
+        console.error('AIによるWebサイト抽出中にエラーが発生:', error.message || error);
     }
     
     return null;
@@ -1848,28 +1909,7 @@ function validateAndCorrectWebsiteResult(aiResult, structuredData, url) {
     return validated;
 }
 
-// Webサイト情報解析
-function parseWebsiteInfo(html, url) {
-    try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-
-        const pageTitle = doc.querySelector('title')?.textContent?.trim() || 
-                         doc.querySelector('h1')?.textContent?.trim() || 
-                         doc.querySelector('meta[property="og:title"]')?.getAttribute('content') ||
-                         'ページタイトル不明';
-
-        const siteName = doc.querySelector('meta[property="og:site_name"]')?.getAttribute('content') || 
-                        doc.querySelector('meta[name="application-name"]')?.getAttribute('content') || 
-                        getDomainName(url);
-
-        const currentDate = getCurrentDateString();
-        generateWebsiteCitation(pageTitle, siteName, url, currentDate);
-    } catch (error) {
-        showError('Webサイト情報の解析中にエラーが発生しました。');
-        console.error('Website parsing error:', error);
-    }
-}
+// 重複していたparseWebsiteInfo関数を削除（行1189に優れた実装が存在）
 
 // Webサイト引用文献生成
 function generateWebsiteCitation(pageTitle, siteName, url, accessDate) {
