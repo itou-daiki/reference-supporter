@@ -405,39 +405,19 @@ async function extractPaper() {
     }
 }
 
-// 共通のプロキシ抽出関数（論文用）
-async function extractWithProxy(url) {
-    // 複数のプロキシサービスを試行（優先順位順）
     const proxyConfigs = [
         {
-            url: `https://cors.eu.org/${url}`,
+            url: `https://proxy.cors.sh/${url}`,
             parseResponse: (text) => text,
-            timeout: 15000,
-            isText: true
-        },
-        {
-            url: `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-            parseResponse: (data) => data.contents,
-            timeout: 10000
-        },
-        {
-            url: `https://corsproxy.io/?${encodeURIComponent(url)}`,
-            parseResponse: (text) => text,
-            timeout: 10000,
-            isText: true
+            timeout: 15000, // Increase timeout slightly
+            isText: true,
+            headers: { 'x-cors-api-key': 'temp_892349872349872' } // A different temp key, might help
         },
         {
             url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
             parseResponse: (text) => text,
-            timeout: 10000,
+            timeout: 15000,
             isText: true
-        },
-        {
-            url: `https://proxy.cors.sh/${url}`,
-            parseResponse: (text) => text,
-            timeout: 10000,
-            isText: true,
-            headers: { 'x-cors-api-key': 'temp_' }
         }
     ];
 
@@ -475,34 +455,17 @@ async function extractWebsiteWithProxy(url) {
     // 複数のプロキシサービスを試行（優先順位順）
     const proxyConfigs = [
         {
-            url: `https://cors.eu.org/${url}`,
+            url: `https://proxy.cors.sh/${url}`,
             parseResponse: (text) => text,
-            timeout: 15000,
-            isText: true
-        },
-        {
-            url: `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-            parseResponse: (data) => data.contents,
-            timeout: 10000
-        },
-        {
-            url: `https://corsproxy.io/?${encodeURIComponent(url)}`,
-            parseResponse: (text) => text,
-            timeout: 10000,
-            isText: true
+            timeout: 15000, // Increase timeout slightly
+            isText: true,
+            headers: { 'x-cors-api-key': 'temp_892349872349872' } // A different temp key, might help
         },
         {
             url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
             parseResponse: (text) => text,
-            timeout: 10000,
+            timeout: 15000,
             isText: true
-        },
-        {
-            url: `https://proxy.cors.sh/${url}`,
-            parseResponse: (text) => text,
-            timeout: 10000,
-            isText: true,
-            headers: { 'x-cors-api-key': 'temp_' }
         }
     ];
 
