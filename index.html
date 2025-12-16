@@ -10,72 +10,9 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
-    <!-- サイドバー -->
-    <div id="sidebar" class="sidebar">
-        <div class="sidebar-header">
-            <h3><i class="fas fa-cog"></i> 設定</h3>
-            <button id="sidebar-close" class="sidebar-close">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        
-        <div class="sidebar-content">
-            <div class="api-section">
-                <h4><i class="fas fa-robot"></i> AI補助機能</h4>
-                <p class="api-description">
-                    Gemini 2.0 Flash APIを使用してより正確な情報抽出を行います（オプション）
-                </p>
-                
-                <div class="form-group">
-                    <label for="gemini-api-key">Gemini API キー:</label>
-                    <div class="api-key-input">
-                        <input type="password" id="gemini-api-key" placeholder="AIStudioで取得したAPIキーを入力">
-                        <button id="toggle-api-key" class="toggle-visibility">
-                            <i class="fas fa-eye"></i>
-                        </button>
-                    </div>
-                </div>
-                
-                <div class="api-links">
-                    <a href="https://aistudio.google.com/app/apikey" target="_blank" class="api-link">
-                        <i class="fas fa-external-link-alt"></i>
-                        APIキーを取得する
-                    </a>
-                </div>
-                
-                <div class="api-toggle">
-                    <label class="switch">
-                        <input type="checkbox" id="enable-ai-assist">
-                        <span class="slider"></span>
-                    </label>
-                    <span class="toggle-label">AI補助機能を有効にする</span>
-                </div>
-                
-                <div class="api-status" id="api-status">
-                    <i class="fas fa-circle status-inactive"></i>
-                    <span>無効</span>
-                </div>
-            </div>
-            
-            <div class="help-section">
-                <h4><i class="fas fa-question-circle"></i> ヘルプ</h4>
-                <ul class="help-list">
-                    <li>AI補助機能は抽出精度を向上させます</li>
-                    <li>APIキーは安全に暗号化されて保存されます</li>
-                    <li>機能はいつでもオン/オフできます</li>
-                </ul>
-            </div>
-        </div>
-    </div>
-    
     <!-- メインコンテンツ -->
     <div class="main-content">
         <div class="container">
-            <!-- サイドバー開閉ボタン -->
-            <button id="sidebar-toggle" class="sidebar-toggle">
-                <i class="fas fa-cog"></i>
-            </button>
-            
             <header class="header">
                 <h1><i class="fas fa-quote-left"></i> 引用参考文献作成ツール Ver1.4</h1>
                 <p class="subtitle">書籍、論文、Webサイトの引用文献を自動生成</p>
@@ -520,8 +457,6 @@
         </div>
     </div>
     
-    <!-- サイドバーオーバーレイ -->
-    <div id="sidebar-overlay" class="sidebar-overlay"></div>
 
     <script src="script.js"></script>
 </body>

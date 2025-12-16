@@ -1,7 +1,5 @@
 // グローバル変数
 let selectedBook = null;
-let geminiApiKey = '';
-let aiAssistEnabled = false;
 
 // DOM要素の取得
 const tabButtons = document.querySelectorAll('.tab-button');
@@ -34,20 +32,9 @@ const cancelEditButton = document.getElementById('cancel-edit');
 const errorSection = document.getElementById('error-section');
 const errorText = document.getElementById('error-text');
 
-// サイドバー関連
-const sidebar = document.getElementById('sidebar');
-const sidebarToggle = document.getElementById('sidebar-toggle');
-const sidebarClose = document.getElementById('sidebar-close');
-const sidebarOverlay = document.getElementById('sidebar-overlay');
-const geminiApiKeyInput = document.getElementById('gemini-api-key');
-const toggleApiKeyButton = document.getElementById('toggle-api-key');
-const enableAiAssistCheckbox = document.getElementById('enable-ai-assist');
-const apiStatus = document.getElementById('api-status');
-
 // 初期化
 document.addEventListener('DOMContentLoaded', function() {
     setupEventListeners();
-    loadSettings();
     initializeManualForms();
     
     // デバッグ: 要素の存在確認
@@ -122,87 +109,6 @@ function setupEventListeners() {
 
     // 手動入力フォーム
     setupManualFormListeners();
-
-    // サイドバー関連
-    sidebarToggle.addEventListener('click', openSidebar);
-    sidebarClose.addEventListener('click', closeSidebar);
-    sidebarOverlay.addEventListener('click', closeSidebar);
-    
-    // API設定関連
-    toggleApiKeyButton.addEventListener('click', toggleApiKeyVisibility);
-    geminiApiKeyInput.addEventListener('input', updateApiKey);
-    enableAiAssistCheckbox.addEventListener('change', toggleAiAssist);
-}
-
-// 設定の読み込み
-function loadSettings() {
-    const savedApiKey = localStorage.getItem('gemini-api-key');
-    const savedAiAssist = localStorage.getItem('ai-assist-enabled') === 'true';
-    
-    if (savedApiKey) {
-        geminiApiKeyInput.value = savedApiKey;
-        geminiApiKey = savedApiKey;
-    }
-    
-    enableAiAssistCheckbox.checked = savedAiAssist;
-    aiAssistEnabled = savedAiAssist;
-    
-    updateApiStatus();
-}
-
-// サイドバー開閉
-function openSidebar() {
-    sidebar.classList.add('open');
-    sidebarOverlay.classList.add('active');
-    document.body.style.overflow = 'hidden';
-}
-
-function closeSidebar() {
-    sidebar.classList.remove('open');
-    sidebarOverlay.classList.remove('active');
-    document.body.style.overflow = '';
-}
-
-// APIキー表示切り替え
-function toggleApiKeyVisibility() {
-    const input = geminiApiKeyInput;
-    const icon = toggleApiKeyButton.querySelector('i');
-    
-    if (input.type === 'password') {
-        input.type = 'text';
-        icon.className = 'fas fa-eye-slash';
-    } else {
-        input.type = 'password';
-        icon.className = 'fas fa-eye';
-    }
-}
-
-// APIキー更新
-function updateApiKey() {
-    geminiApiKey = geminiApiKeyInput.value.trim();
-    localStorage.setItem('gemini-api-key', geminiApiKey);
-    updateApiStatus();
-}
-
-// AI補助機能切り替え
-function toggleAiAssist() {
-    aiAssistEnabled = enableAiAssistCheckbox.checked && geminiApiKey.length > 0;
-    localStorage.setItem('ai-assist-enabled', aiAssistEnabled.toString());
-    updateApiStatus();
-}
-
-// APIステータス更新
-function updateApiStatus() {
-    const statusIcon = apiStatus.querySelector('i');
-    const statusText = apiStatus.querySelector('span');
-    
-    if (aiAssistEnabled && geminiApiKey.length > 0) {
-        statusIcon.className = 'fas fa-circle status-active';
-        statusText.textContent = '有効';
-    } else {
-        statusIcon.className = 'fas fa-circle status-inactive';
-        statusText.textContent = '無効';
-    }
 }
 
 // タブ切り替え
@@ -461,29 +367,17 @@ async function extractPaper() {
 
     try {
         const basicInfo = extractPaperInfoFromUrl(url);
-        
-        if (aiAssistEnabled) {
-            const aiExtractedInfo = await extractJstageInfoWithAI(url);
+
+        try {
+            const extractedInfo = await extractWithProxy(url);
             hideLoadingState(paperLoading);
-            
-            if (aiExtractedInfo) {
-                const combinedInfo = { ...basicInfo, ...aiExtractedInfo };
-                showManualPaperForm(url, combinedInfo);
-            } else {
-                showManualPaperForm(url, basicInfo);
-            }
-        } else {
-            try {
-                const extractedInfo = await extractWithProxy(url);
-                hideLoadingState(paperLoading);
-                const combinedInfo = { ...basicInfo, ...extractedInfo };
-                showManualPaperForm(url, combinedInfo);
-            } catch {
-                hideLoadingState(paperLoading);
-                showManualPaperForm(url, basicInfo);
-            }
+            const combinedInfo = { ...basicInfo, ...extractedInfo };
+            showManualPaperForm(url, combinedInfo);
+        } catch {
+            hideLoadingState(paperLoading);
+            showManualPaperForm(url, basicInfo);
         }
-        
+
     } catch (error) {
         hideLoadingState(paperLoading);
         showManualPaperForm(url);
@@ -857,105 +751,6 @@ function isValidUrl(string) {
 }
 
 // J-STAGEの情報をAIで抽出（改良版）
-async function extractJstageInfoWithAI(url) {
-    if (!aiAssistEnabled) {
-        console.log('AI補助が無効です');
-        return null;
-    }
-
-    if (!geminiApiKey) {
-        console.warn('Gemini APIキーが設定されていません。AI補助機能を使用するには、APIキーを設定してください。');
-        return null;
-    }
-
-    try {
-        // まずページデータを構造化して抽出
-        let structuredData = null;
-        try {
-            const proxyServices = [
-                `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-                `https://corsproxy.io/?${encodeURIComponent(url)}`
-            ];
-
-            for (const proxyUrl of proxyServices) {
-                try {
-                    const response = await fetch(proxyUrl);
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data.contents || data.data) {
-                            structuredData = extractStructuredPageData(data.contents || data.data, url);
-                            if (structuredData) break;
-                        }
-                    }
-                } catch (error) {
-                    continue;
-                }
-            }
-        } catch (error) {
-            console.warn('構造化データの取得に失敗:', error);
-        }
-
-        // 構造化データがある場合はそれをAIに提供
-        const prompt = structuredData 
-            ? createStructuredPromptForJstage(url, structuredData)
-            : createBasicPromptForJstage(url);
-
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [{ text: prompt }]
-                }]
-            })
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-
-            if (text) {
-                const jsonMatch = text.match(/```json\s*(.*?)\s*```/s) || text.match(/```\s*(.*?)\s*```/s);
-                const jsonText = jsonMatch ? jsonMatch[1] : text;
-
-                try {
-                    const result = JSON.parse(jsonText);
-                    // 構造化データとの一致を検証
-                    if (structuredData) {
-                        return validateAndCorrectResult(result, structuredData);
-                    }
-                    return result;
-                } catch (parseError) {
-                    console.warn('JSON解析に失敗しましたが、部分的な情報を抽出します:', parseError);
-                    return parsePartialInfo(text);
-                }
-            } else {
-                console.warn('AIから有効なレスポンスが得られませんでした');
-            }
-        } else {
-            const errorText = await response.text();
-            console.error('Gemini API呼び出しに失敗:', response.status, errorText);
-
-            // ユーザーに分かりやすいエラーメッセージを表示
-            if (response.status === 429) {
-                console.warn('⚠️ Gemini APIのレート制限に達しました。しばらく待ってから再度お試しいただくか、手動入力をご利用ください。');
-            } else if (response.status === 401 || response.status === 403) {
-                console.warn('⚠️ APIキーが無効です。設定画面で正しいAPIキーを入力してください。');
-            } else {
-                console.warn(`⚠️ API呼び出しに失敗しました (ステータス: ${response.status})。手動入力をご利用ください。`);
-            }
-        }
-    } catch (error) {
-        console.error('AI J-STAGE抽出中にエラーが発生:', error.message || error);
-        console.warn('⚠️ ネットワークエラーが発生しました。インターネット接続を確認してください。');
-    }
-
-    return null;
-}
-
-// 構造化データを使用したプロンプト作成
 function createStructuredPromptForJstage(url, structuredData) {
     const metadataInfo = structuredData.metadata;
     const contentInfo = structuredData.content;
@@ -1060,74 +855,6 @@ JSONのみを返し、説明や推測は一切含めないでください。`;
 }
 
 // 結果の検証と修正
-function validateAndCorrectResult(aiResult, structuredData) {
-    const validated = { ...aiResult };
-    
-    // メタデータとの照合
-    const metadata = structuredData.metadata;
-    if (metadata.citationTitle && (!validated.title || validated.title === "")) {
-        validated.title = metadata.citationTitle;
-    }
-    if (metadata.citationAuthors && (!validated.authors || validated.authors === "")) {
-        validated.authors = metadata.citationAuthors.replace(/,\s*/g, '・');
-    }
-    if (metadata.citationJournal && (!validated.journal || validated.journal === "")) {
-        validated.journal = metadata.citationJournal;
-    }
-    if (metadata.citationVolume && (!validated.volume || validated.volume === "")) {
-        validated.volume = metadata.citationVolume;
-    }
-    if (metadata.citationIssue && (!validated.issue || validated.issue === "")) {
-        validated.issue = metadata.citationIssue;
-    }
-    
-    // 年の抽出
-    if (metadata.citationDate && (!validated.year || validated.year === "")) {
-        const yearMatch = metadata.citationDate.match(/(\d{4})/);
-        if (yearMatch) {
-            validated.year = yearMatch[1];
-        }
-    }
-    
-    // ページ情報の組み立て
-    if (metadata.citationFirstPage && (!validated.pages || validated.pages === "")) {
-        let pages = metadata.citationFirstPage;
-        if (metadata.citationLastPage && metadata.citationLastPage !== metadata.citationFirstPage) {
-            pages += `-${metadata.citationLastPage}`;
-        }
-        validated.pages = pages;
-    }
-    
-    return validated;
-}
-
-// 部分的な情報の解析
-function parsePartialInfo(text) {
-    const info = {};
-    
-    const patterns = {
-        title: /(?:title|タイトル)[:：]\s*"?([^"\n]+)"?/i,
-        authors: /(?:author|著者)[:：]\s*"?([^"\n]+)"?/i,
-        journal: /(?:journal|雑誌)[:：]\s*"?([^"\n]+)"?/i,
-        volume: /(?:volume|巻)[:：]\s*"?(\d+)"?/i,
-        issue: /(?:issue|号)[:：]\s*"?(\d+)"?/i,
-        pages: /(?:pages|ページ)[:：]\s*"?([^"\n]+)"?/i,
-        year: /(?:year|年)[:：]\s*"?(\d{4})"?/i
-    };
-    
-    for (const [key, pattern] of Object.entries(patterns)) {
-        const match = text.match(pattern);
-        if (match) {
-            info[key] = match[1].trim();
-        }
-    }
-    
-    return info;
-}
-
-// HTMLからの論文情報解析（改善版）
-function parsePaperInfoFromHtml(html, url) {
-    try {
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
 
@@ -1363,22 +1090,13 @@ async function extractFromUrlDoi() {
 
     try {
         const extractedDoi = extractDoiFromUrl(url);
-        
+
         if (extractedDoi) {
             hideLoadingState(paperLoading);
             await extractFromDOIInternal(extractedDoi, `URL: ${url}`);
-        } else if (aiAssistEnabled) {
-            const aiExtractedDoi = await extractDoiWithAI(url);
-            hideLoadingState(paperLoading);
-            
-            if (aiExtractedDoi) {
-                await extractFromDOIInternal(aiExtractedDoi, `URL (AI抽出): ${url}`);
-            } else {
-                showError('URLからDOIを見つけることができませんでした。DOIが含まれるURLであることを確認してください。');
-            }
         } else {
             hideLoadingState(paperLoading);
-            showError('URLからDOIを見つけることができませんでした。AI補助機能を有効にするとより正確な抽出が可能です。');
+            showError('URLからDOIを見つけることができませんでした。DOIが含まれるURLであることを確認してください。');
         }
     } catch (error) {
         hideLoadingState(paperLoading);
@@ -1446,70 +1164,6 @@ async function extractFromDOIInternal(doi, sourceInfo) {
 }
 
 // AI補助機能でDOI抽出
-async function extractDoiWithAI(url) {
-    if (!aiAssistEnabled) {
-        console.log('AI補助が無効です');
-        return null;
-    }
-
-    if (!geminiApiKey) {
-        console.warn('Gemini APIキーが設定されていません。AI補助機能を使用するには、APIキーを設定してください。');
-        return null;
-    }
-
-    try {
-        const prompt = `以下のURLからDOI（Digital Object Identifier）を抽出してください。DOIは "10." で始まる形式です。
-
-URL: ${url}
-
-DOIが見つかった場合は、DOIのみを返してください（例: 10.1000/182）。
-DOIが見つからない場合は "NOT_FOUND" と返してください。`;
-
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [{ text: prompt }]
-                }]
-            })
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-
-            if (text && text !== 'NOT_FOUND' && isValidDoi(text)) {
-                return text;
-            } else if (!text) {
-                console.warn('AIから有効なレスポンスが得られませんでした');
-            } else {
-                console.log('AIがDOIを検出できませんでした');
-            }
-        } else {
-            const errorText = await response.text();
-            console.error('Gemini API呼び出しに失敗:', response.status, errorText);
-
-            // ユーザーに分かりやすいエラーメッセージを表示
-            if (response.status === 429) {
-                console.warn('⚠️ Gemini APIのレート制限に達しました。しばらく待ってから再度お試しいただくか、手動入力をご利用ください。');
-            } else if (response.status === 401 || response.status === 403) {
-                console.warn('⚠️ APIキーが無効です。設定画面で正しいAPIキーを入力してください。');
-            } else {
-                console.warn(`⚠️ API呼び出しに失敗しました (ステータス: ${response.status})。手動入力をご利用ください。`);
-            }
-        }
-    } catch (error) {
-        console.error('AIによるDOI抽出中にエラーが発生:', error.message || error);
-        console.warn('⚠️ ネットワークエラーが発生しました。インターネット接続を確認してください。');
-    }
-
-    return null;
-}
-
-// CrossRefからの論文データを解析
 function parseCrossRefData(work, sourceInfo) {
     try {
         const authors = work.author ? work.author.map(author => {
@@ -1578,17 +1232,6 @@ async function extractWebsite() {
     showLoadingState(websiteLoading);
 
     try {
-        if (aiAssistEnabled) {
-            const aiExtractedInfo = await extractWebsiteInfoWithAI(url);
-            hideLoadingState(websiteLoading);
-            
-            if (aiExtractedInfo) {
-                const currentDate = getCurrentDateString();
-                generateWebsiteCitation(aiExtractedInfo.title, aiExtractedInfo.siteName, url, currentDate);
-                return;
-            }
-        }
-
         try {
             const htmlContent = await extractWebsiteWithProxy(url);
             hideLoadingState(websiteLoading);
@@ -1597,7 +1240,7 @@ async function extractWebsite() {
             hideLoadingState(websiteLoading);
             showManualWebsiteForm(url);
         }
-        
+
     } catch (error) {
         hideLoadingState(websiteLoading);
         showManualWebsiteForm(url);
@@ -1606,342 +1249,6 @@ async function extractWebsite() {
 }
 
 // AI補助機能でWebサイト情報抽出（改良版）
-async function extractWebsiteInfoWithAI(url) {
-    if (!aiAssistEnabled) {
-        console.log('AI補助が無効です');
-        return null;
-    }
-
-    if (!geminiApiKey) {
-        console.warn('Gemini APIキーが設定されていません。AI補助機能を使用するには、APIキーを設定してください。');
-        return null;
-    }
-
-    try {
-        // まずページデータを構造化して抽出
-        let structuredData = null;
-        try {
-            const proxyServices = [
-                `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-                `https://corsproxy.io/?${encodeURIComponent(url)}`
-            ];
-
-            for (const proxyUrl of proxyServices) {
-                try {
-                    const response = await fetch(proxyUrl);
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data.contents || data.data) {
-                            structuredData = extractStructuredPageData(data.contents || data.data, url);
-                            if (structuredData) break;
-                        }
-                    }
-                } catch (error) {
-                    continue;
-                }
-            }
-        } catch (error) {
-            console.warn('構造化データの取得に失敗:', error);
-        }
-
-        // 構造化データがある場合はそれをAIに提供
-        const prompt = structuredData 
-            ? createStructuredPromptForWebsite(url, structuredData)
-            : createBasicPromptForWebsite(url);
-
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [{ text: prompt }]
-                }]
-            })
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-
-            if (text) {
-                const jsonMatch = text.match(/```json\s*(.*?)\s*```/s) || text.match(/```\s*(.*?)\s*```/s);
-                const jsonText = jsonMatch ? jsonMatch[1] : text;
-
-                try {
-                    const result = JSON.parse(jsonText);
-                    // 構造化データとの一致を検証
-                    if (structuredData) {
-                        return validateAndCorrectWebsiteResult(result, structuredData, url);
-                    }
-                    return result;
-                } catch (parseError) {
-                    console.warn('Webサイト情報のJSON解析に失敗:', parseError);
-                    return {
-                        title: 'ページタイトル不明',
-                        siteName: getDomainName(url)
-                    };
-                }
-            } else {
-                console.warn('AIから有効なレスポンスが得られませんでした');
-            }
-        } else {
-            const errorText = await response.text();
-            console.error('Gemini API呼び出しに失敗:', response.status, errorText);
-
-            // ユーザーに分かりやすいエラーメッセージを表示
-            if (response.status === 429) {
-                console.warn('⚠️ Gemini APIのレート制限に達しました。しばらく待ってから再度お試しいただくか、手動入力をご利用ください。');
-            } else if (response.status === 401 || response.status === 403) {
-                console.warn('⚠️ APIキーが無効です。設定画面で正しいAPIキーを入力してください。');
-            } else {
-                console.warn(`⚠️ API呼び出しに失敗しました (ステータス: ${response.status})。手動入力をご利用ください。`);
-            }
-        }
-    } catch (error) {
-        console.error('AIによるWebサイト抽出中にエラーが発生:', error.message || error);
-        console.warn('⚠️ ネットワークエラーが発生しました。インターネット接続を確認してください。');
-    }
-
-    return null;
-}
-
-// 構造化データを使用したWebサイト用プロンプト作成
-function createStructuredPromptForWebsite(url, structuredData) {
-    const metadataInfo = structuredData.metadata;
-    const contentInfo = structuredData.content;
-    
-    let extractedElements = "【ページから抽出された要素】\n";
-    
-    // 1. Article Header情報（最優先）
-    if (contentInfo.articleHeaders?.length > 0) {
-        extractedElements += "【Article Header構造から抽出（最優先）】\n";
-        contentInfo.articleHeaders.forEach((articleHeader, index) => {
-            extractedElements += `- Article ${index + 1}:\n`;
-            
-            // タイトル情報
-            if (articleHeader.elements.title?.length > 0) {
-                extractedElements += "  - タイトル:\n";
-                articleHeader.elements.title.slice(0, 2).forEach(title => {
-                    extractedElements += `    - "${title.text}" (信頼度: ${title.confidence}, ${title.tagName}${title.selector})\n`;
-                });
-            }
-            
-            // 著者情報
-            if (articleHeader.elements.author?.length > 0) {
-                extractedElements += "  - 著者:\n";
-                articleHeader.elements.author.slice(0, 2).forEach(author => {
-                    extractedElements += `    - "${author.text}" (信頼度: ${author.confidence}, ${author.tagName}${author.selector})\n`;
-                });
-            }
-            
-            // 日付情報
-            if (articleHeader.elements.date?.length > 0) {
-                extractedElements += "  - 日付:\n";
-                articleHeader.elements.date.slice(0, 2).forEach(date => {
-                    const datetimeInfo = date.datetime ? ` datetime="${date.datetime}"` : '';
-                    extractedElements += `    - "${date.text}" (信頼度: ${date.confidence}, ${date.tagName}${date.selector}${datetimeInfo})\n`;
-                });
-            }
-            
-            // ソース/サイト名情報
-            if (articleHeader.elements.source?.length > 0) {
-                extractedElements += "  - ソース/サイト名:\n";
-                articleHeader.elements.source.slice(0, 2).forEach(source => {
-                    extractedElements += `    - "${source.text}" (信頼度: ${source.confidence}, ${source.tagName}${source.selector})\n`;
-                });
-            }
-        });
-        extractedElements += "\n";
-    }
-    
-    // 2. メタデータ情報
-    extractedElements += "【メタデータ】\n";
-    if (metadataInfo.title) extractedElements += `- <title>: "${metadataInfo.title}"\n`;
-    if (metadataInfo.ogTitle) extractedElements += `- og:title: "${metadataInfo.ogTitle}"\n`;
-    if (metadataInfo.twitterTitle) extractedElements += `- twitter:title: "${metadataInfo.twitterTitle}"\n`;
-    if (metadataInfo.siteName) extractedElements += `- og:site_name: "${metadataInfo.siteName}"\n`;
-    if (metadataInfo.description) extractedElements += `- description: "${metadataInfo.description}"\n`;
-    extractedElements += "\n";
-    
-    // 3. 一般的なコンテンツ要素（上位3つまで）
-    if (contentInfo.titles?.length > 0) {
-        extractedElements += "【一般的なタイトル候補】\n";
-        contentInfo.titles.slice(0, 3).forEach(title => {
-            extractedElements += `- "${title.text}" (信頼度: ${title.confidence}, セレクタ: ${title.selector})\n`;
-        });
-        extractedElements += "\n";
-    }
-    
-    if (contentInfo.journals?.length > 0) {
-        extractedElements += "【サイト名候補】\n";
-        contentInfo.journals.slice(0, 3).forEach(site => {
-            extractedElements += `- "${site.text}" (信頼度: ${site.confidence}, セレクタ: ${site.selector})\n`;
-        });
-        extractedElements += "\n";
-    }
-
-    return `あなたはWebサイト情報抽出の専門家です。以下のページから抽出された構造化データを元に、正確なページ情報を選択してください。
-
-URL: ${url}
-
-${extractedElements}
-
-【重要な制約事項】
-1. 上記の抽出された要素の中から最も適切なものを選択してください
-2. 抽出された要素にない情報は絶対に追加しないでください
-3. 推測や想像で情報を補完してはいけません
-4. 不明な項目は空文字列にしてください
-
-【選択ルール】
-- Article Header構造から抽出された情報を最優先してください（最も信頼性が高い）
-- Article Header内では信頼度の高い要素を優先してください
-- Article Headerが複数ある場合は、最も信頼度の高いタイトルを持つものを選択してください
-- Article Headerがない場合は、メタデータ（og:title、<title>等）を次の優先度とします
-- サイト名とページタイトルを混同しないでください
-- 明らかに関連記事やナビゲーションのタイトルは除外してください
-- <time>要素のdatetime属性がある場合は、それを日付情報として活用してください
-
-以下の形式のJSONで返してください：
-{
-  "title": "選択したページタイトル",
-  "siteName": "選択したサイト名"
-}
-
-抽出された要素にない情報は必ず空文字列 "" にしてください。JSONのみを返してください。`;
-}
-
-// 基本的なWebサイト用プロンプト（構造化データなしの場合）
-function createBasicPromptForWebsite(url) {
-    return `あなたはWebサイト情報抽出の専門家です。以下のURLにアクセスして、メインコンテンツから正確な情報を抽出してください。
-
-URL: ${url}
-
-【重要な制約事項】
-1. 実際にページに記載されている情報のみを抽出してください
-2. 推測や想像で情報を補完してはいけません
-3. ハルシネーション（存在しない情報の生成）は絶対に避けてください
-
-【抽出ルール】
-- メインコンテンツのタイトルを抽出（サイドバーやおすすめ記事は除外）
-- ニュースサイトの場合：記事本文のタイトルを抽出（関連記事やおすすめ記事のタイトルは無視）
-- <title>タグ、<h1>タグ、メインコンテンツエリアを優先
-- サイト名は公式名称のみ（記事タイトルと混同しない）
-
-【除外すべき要素】
-- サイドバーの関連記事タイトル
-- おすすめ記事のタイトル
-- 広告のタイトル
-- ナビゲーションメニューのテキスト
-- フッターの情報
-
-以下の形式のJSONで返してください：
-{
-  "title": "メインコンテンツの実際のタイトル",
-  "siteName": "実際のサイト名（組織名・会社名）"
-}
-
-情報が確認できない場合は、URLのドメイン名から推測してください。
-JSONのみを返し、説明や推測は一切含めないでください。`;
-}
-
-// Webサイト結果の検証と修正
-function validateAndCorrectWebsiteResult(aiResult, structuredData, url) {
-    const validated = { ...aiResult };
-    
-    const metadata = structuredData.metadata;
-    const content = structuredData.content;
-    
-    // タイトルの検証（優先順位: Article Header > メタデータ > 一般要素）
-    if (!validated.title || validated.title === "") {
-        // 1. Article Header から最優先で取得
-        if (content.articleHeaders?.length > 0) {
-            for (const articleHeader of content.articleHeaders) {
-                if (articleHeader.elements.title?.length > 0) {
-                    const bestTitle = articleHeader.elements.title[0]; // 信頼度順でソート済み
-                    if (bestTitle.text.length > 5 && bestTitle.text.length < 200) {
-                        validated.title = bestTitle.text;
-                        break;
-                    }
-                }
-            }
-        }
-        
-        // 2. Article Headerがない場合はメタデータから取得
-        if (!validated.title || validated.title === "") {
-            if (metadata.ogTitle && metadata.ogTitle.length > 5 && metadata.ogTitle.length < 200) {
-                validated.title = metadata.ogTitle;
-            } else if (metadata.title && metadata.title.length > 5 && metadata.title.length < 200) {
-                validated.title = metadata.title;
-            } else if (content.titles?.length > 0) {
-                validated.title = content.titles[0].text;
-            }
-        }
-    }
-    
-    // サイト名の検証（優先順位: Article Header source > メタデータ > ドメイン名）
-    if (!validated.siteName || validated.siteName === "") {
-        // 1. Article Header から取得
-        if (content.articleHeaders?.length > 0) {
-            for (const articleHeader of content.articleHeaders) {
-                if (articleHeader.elements.source?.length > 0) {
-                    const bestSource = articleHeader.elements.source[0]; // 信頼度順でソート済み
-                    if (bestSource.text.length > 2 && bestSource.text.length < 100) {
-                        validated.siteName = bestSource.text;
-                        break;
-                    }
-                }
-            }
-        }
-        
-        // 2. Article Headerがない場合はメタデータから取得
-        if (!validated.siteName || validated.siteName === "") {
-            if (metadata.siteName && metadata.siteName.length > 2 && metadata.siteName.length < 100) {
-                validated.siteName = metadata.siteName;
-            } else {
-                validated.siteName = getDomainName(url);
-            }
-        }
-    }
-    
-    // 日付情報の追加（Article Headerから取得可能な場合）
-    if (!validated.accessDate && content.articleHeaders?.length > 0) {
-        for (const articleHeader of content.articleHeaders) {
-            if (articleHeader.elements.date?.length > 0) {
-                const bestDate = articleHeader.elements.date[0];
-                if (bestDate.datetime) {
-                    // ISO形式の日付を日本の形式に変換
-                    try {
-                        const dateObj = new Date(bestDate.datetime);
-                        validated.publishDate = dateObj.toLocaleDateString('ja-JP', {
-                            year: 'numeric',
-                            month: '2-digit',
-                            day: '2-digit'
-                        }).replace(/\//g, '.');
-                    } catch (error) {
-                        // 日付解析エラーは無視
-                    }
-                }
-                break;
-            }
-        }
-    }
-    
-    // 結果の最終検証
-    if (!validated.title || validated.title === "") {
-        validated.title = "ページタイトル不明";
-    }
-    if (!validated.siteName || validated.siteName === "") {
-        validated.siteName = getDomainName(url);
-    }
-    
-    return validated;
-}
-
-// 重複していたparseWebsiteInfo関数を削除（行1189に優れた実装が存在）
-
-// Webサイト引用文献生成
 function generateWebsiteCitation(pageTitle, siteName, url, accessDate) {
     const citation = `${pageTitle}, ${siteName}, ${url} (${accessDate})`;
     showResult(citation);
