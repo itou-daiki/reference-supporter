@@ -625,14 +625,28 @@ function extractMetadata(doc) {
     
     metaTags.forEach(({ key, selector, attr }) => {
         const elements = doc.querySelectorAll(selector);
-        if (elements.length > 0) {
-            const values = Array.from(elements).map(el => attr ? el.getAttribute(attr) : el.textContent?.trim()).filter(Boolean);
-            if (values.length > 0) {
-                if (multiValueKeys.includes(key)) {
-                    metadata[key] = values;
-                } else {
-                    metadata[key] = values[0];
-                }
+        if (elements.length === 0) return;
+
+        const values = Array.from(elements).map(el => {
+            return {
+                value: attr ? el.getAttribute(attr) : el.textContent?.trim(),
+                lang: el.getAttribute('xml:lang') || el.getAttribute('lang')
+            };
+        }).filter(item => item.value);
+
+        if (values.length === 0) return;
+
+        if (multiValueKeys.includes(key)) {
+            // For authors, just join them all for now.
+            metadata[key] = values.map(item => item.value);
+        } else {
+            // For single-value keys, prioritize Japanese.
+            const jaValue = values.find(item => item.lang === 'ja');
+            if (jaValue) {
+                metadata[key] = jaValue.value;
+            } else {
+                // Fallback to the first value found.
+                metadata[key] = values[0].value;
             }
         }
     });
