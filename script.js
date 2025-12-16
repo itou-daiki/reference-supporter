@@ -1188,19 +1188,19 @@ function extractDoiFromUrl(url) {
 // DOI抽出の内部処理
 async function extractFromDOIInternal(doi, sourceInfo) {
     try {
-        const crossRefUrl = `https://api.crossref.org/works/${encodeURIComponent(doi)}`;
+        // Use the universal doi.org resolver with content negotiation
+        const doiUrl = `https://doi.org/${encodeURIComponent(doi)}`;
         
-        const data = await makeApiCall(crossRefUrl, {
+        const data = await makeApiCall(doiUrl, {
             headers: {
-                'Accept': 'application/json',
-                'User-Agent': 'CitationGenerator/1.0 (mailto:example@email.com)'
+                'Accept': 'application/vnd.citationstyles.csl+json'
             }
         });
 
         hideLoadingState(paperLoading);
 
-        if (data.status === 'ok' && data.message) {
-            parseCrossRefData(data.message, sourceInfo);
+        if (data) {
+            parseDoiData(data, sourceInfo);
         } else {
             showError('DOIから論文情報を取得できませんでした。DOIを確認してください。');
         }
@@ -1216,7 +1216,7 @@ async function extractFromDOIInternal(doi, sourceInfo) {
 }
 
 // AI補助機能でDOI抽出
-function parseCrossRefData(work, sourceInfo) {
+function parseDoiData(work, sourceInfo) {
     try {
         const authors = work.author ? work.author.map(author => {
             const given = author.given || '';
@@ -1225,20 +1225,20 @@ function parseCrossRefData(work, sourceInfo) {
             return given ? `${family}${given}` : family;
         }).join('・') : '著者不明';
 
-        const title = work.title && work.title[0] ? work.title[0] : 'タイトル不明';
-        const journal = work['container-title'] && work['container-title'][0] 
-            ? work['container-title'][0] 
-            : '雑誌名不明';
+        // CSL-JSON title is not an array
+        const title = work.title || 'タイトル不明';
+        
+        // CSL-JSON container-title is not an array
+        const journal = work['container-title'] || '雑誌名不明';
 
         const volume = work.volume || '';
         const issue = work.issue || '';
         const pages = work.page || '';
 
         let year = '';
-        if (work.published && work.published['date-parts'] && work.published['date-parts'][0]) {
-            year = work.published['date-parts'][0][0].toString();
-        } else if (work['published-online'] && work['published-online']['date-parts'] && work['published-online']['date-parts'][0]) {
-            year = work['published-online']['date-parts'][0][0].toString();
+        // Use 'issued' field from CSL-JSON
+        if (work.issued && work.issued['date-parts'] && work.issued['date-parts'][0]) {
+            year = work.issued['date-parts'][0][0].toString();
         } else {
             year = '発表年不明';
         }
@@ -1257,8 +1257,8 @@ function parseCrossRefData(work, sourceInfo) {
         showManualPaperForm(sourceInfo, prefilledData);
         
     } catch (error) {
-        showError('論文情報の解析中にエラーが発生しました。');
-        console.error('CrossRef data parsing error:', error);
+        showError('DOIから取得した論文情報の解析中にエラーが発生しました。');
+        console.error('DOI data parsing error:', error);
     }
 }
 
