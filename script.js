@@ -405,6 +405,8 @@ async function extractPaper() {
     }
 }
 
+// 共通のプロキシ抽出関数（論文用）
+async function extractWithProxy(url) {
     const proxyConfigs = [
         {
             url: `https://proxy.cors.sh/${url}`,
