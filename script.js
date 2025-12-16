@@ -342,7 +342,7 @@ function showBookManualForm() {
 
 // 論文抽出（J-STAGE）
 async function extractPaper() {
-    const url = jstageUrlInput.value.trim();
+    let url = jstageUrlInput.value.trim();
 
     if (!url) {
         showError('J-STAGEのURLを入力してください。');
@@ -359,24 +359,40 @@ async function extractPaper() {
         return;
     }
 
+    const originalUrl = url;
+    // PDFのURLだった場合、記事ページのURLに変換
+    if (url.includes('/_pdf')) {
+        url = url.replace('/_pdf', '/_article/-char/ja');
+    }
+
     showLoadingState(paperLoading);
 
     try {
-        const basicInfo = extractPaperInfoFromUrl(url);
+        // URLから基本的な情報を抽出（フォールバック用）
+        const basicInfo = extractPaperInfoFromUrl(originalUrl);
 
         try {
+            // プロキシ経由でHTMLを取得し、詳細情報を抽出
             const extractedInfo = await extractWithProxy(url);
             hideLoadingState(paperLoading);
+            
+            // 抽出した情報と基本情報をマージ
             const combinedInfo = { ...basicInfo, ...extractedInfo };
-            showManualPaperForm(url, combinedInfo);
-        } catch {
+            
+            // ユーザーが確認・編集できるようにフォームに情報を設定して表示
+            showManualPaperForm(originalUrl, combinedInfo);
+
+        } catch (proxyError) {
+            // プロキシでの抽出に失敗した場合は、URLから抽出した基本情報のみでフォームを表示
             hideLoadingState(paperLoading);
-            showManualPaperForm(url, basicInfo);
+            showManualPaperForm(originalUrl, basicInfo);
+            console.warn('Proxy extraction failed, falling back to basic info:', proxyError);
         }
 
     } catch (error) {
         hideLoadingState(paperLoading);
-        showManualPaperForm(url);
+        // その他のエラーが発生した場合
+        showManualPaperForm(originalUrl);
         console.error('Paper extraction error:', error);
     }
 }
@@ -511,6 +527,50 @@ async function extractWebsiteWithProxy(url) {
     throw new Error('プロキシでの抽出に失敗しました');
 }
 
+// HTMLから論文情報を解析
+function parsePaperInfoFromHtml(html, url) {
+    const data = extractStructuredPageData(html, url);
+    if (!data) return {};
+
+    const meta = data.metadata;
+    let authorsArray = [];
+
+    if (meta.citationAuthors) {
+        authorsArray = Array.isArray(meta.citationAuthors) ? meta.citationAuthors : [meta.citationAuthors];
+    } else if (meta.dcCreator) {
+        authorsArray = Array.isArray(meta.dcCreator) ? meta.dcCreator : [meta.dcCreator];
+    }
+
+    const authors = authorsArray.join('・');
+    const title = meta.citationTitle || meta.ogTitle || meta.twitterTitle || meta.dcTitle || '';
+    const journal = meta.citationJournal || meta.siteName || meta.ogSiteName || meta.dcSource || '';
+
+    let year = '';
+    if (meta.citationDate) {
+        year = meta.citationDate.split('/')[0];
+    } else if (meta.dcDate) {
+        year = meta.dcDate.split('-')[0];
+    }
+
+    let pages = '';
+    if (meta.citationFirstPage && meta.citationLastPage) {
+        pages = `${meta.citationFirstPage}-${meta.citationLastPage}`;
+    } else if (meta.citationFirstPage) {
+        pages = meta.citationFirstPage;
+    }
+
+    return {
+        authors: authors,
+        title: title,
+        journal: journal,
+        volume: meta.citationVolume || '',
+        issue: meta.citationIssue || '',
+        pages: pages,
+        year: year,
+        doi: meta.citationDoi || ''
+    };
+}
+
 // 構造化されたページデータ抽出関数
 function extractStructuredPageData(html, url) {
     try {
@@ -534,6 +594,7 @@ function extractStructuredPageData(html, url) {
 // メタデータ抽出
 function extractMetadata(doc) {
     const metadata = {};
+    const multiValueKeys = ['citationAuthors', 'dcCreator'];
     
     // 基本的なメタデータ
     const metaTags = [
@@ -563,9 +624,16 @@ function extractMetadata(doc) {
     ];
     
     metaTags.forEach(({ key, selector, attr }) => {
-        const element = doc.querySelector(selector);
-        if (element) {
-            metadata[key] = attr ? element.getAttribute(attr) : element.textContent?.trim();
+        const elements = doc.querySelectorAll(selector);
+        if (elements.length > 0) {
+            const values = Array.from(elements).map(el => attr ? el.getAttribute(attr) : el.textContent?.trim()).filter(Boolean);
+            if (values.length > 0) {
+                if (multiValueKeys.includes(key)) {
+                    metadata[key] = values;
+                } else {
+                    metadata[key] = values[0];
+                }
+            }
         }
     });
     
