@@ -368,31 +368,13 @@ async function extractPaper() {
     showLoadingState(paperLoading);
 
     try {
-        // URLから基本的な情報を抽出（フォールバック用）
-        const basicInfo = extractPaperInfoFromUrl(originalUrl);
-
-        try {
-            // プロキシ経由でHTMLを取得し、詳細情報を抽出
-            const extractedInfo = await extractWithProxy(url);
-            hideLoadingState(paperLoading);
-            
-            // 抽出した情報と基本情報をマージ
-            const combinedInfo = { ...basicInfo, ...extractedInfo };
-            
-            // ユーザーが確認・編集できるようにフォームに情報を設定して表示
-            showManualPaperForm(originalUrl, combinedInfo);
-
-        } catch (proxyError) {
-            // プロキシでの抽出に失敗した場合は、URLから抽出した基本情報のみでフォームを表示
-            hideLoadingState(paperLoading);
-            showManualPaperForm(originalUrl, basicInfo);
-            console.warn('Proxy extraction failed, falling back to basic info:', proxyError);
-        }
+        const html = await extractWithProxy(url);
+        hideLoadingState(paperLoading);
+        debug_showHead(html); // Call the debug function
 
     } catch (error) {
         hideLoadingState(paperLoading);
-        // その他のエラーが発生した場合
-        showManualPaperForm(originalUrl);
+        showError(`エラーが発生しました: ${error.message}`);
         console.error('Paper extraction error:', error);
     }
 }
@@ -450,7 +432,7 @@ async function extractWithProxy(url) {
                     : config.parseResponse(await response.json());
 
                 if (htmlContent && htmlContent.length > 100) {
-                    return parsePaperInfoFromHtml(htmlContent, url);
+                    return htmlContent; // Return the raw HTML for debugging
                 }
             }
         } catch (error) {
@@ -525,6 +507,23 @@ async function extractWebsiteWithProxy(url) {
     }
 
     throw new Error('プロキシでの抽出に失敗しました');
+}
+
+// TEMPORARY DEBUG FUNCTION
+function debug_showHead(html) {
+    try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const head = doc.querySelector('head');
+        if (head) {
+            const formattedHtml = head.innerHTML.replace(/</g, '\n&lt;').replace(/>/g, '>\n');
+            showResult(`--- DEBUG: HEAD CONTENT ---\n${formattedHtml}`);
+        } else {
+            showError("DEBUG: Could not find <head> element.");
+        }
+    } catch (e) {
+        showError(`DEBUG: Error parsing HTML: ${e.message}`);
+    }
 }
 
 // HTMLから論文情報を解析
