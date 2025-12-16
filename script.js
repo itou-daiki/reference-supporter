@@ -1194,7 +1194,8 @@ async function extractFromDOIInternal(doi, sourceInfo) {
         
         const data = await makeApiCall(doiUrl, {
             headers: {
-                'Accept': 'application/vnd.citationstyles.csl+json'
+                'Accept': 'application/vnd.citationstyles.csl+json',
+                'Accept-Language': 'ja, en;q=0.9' // Request Japanese content
             }
         });
 
