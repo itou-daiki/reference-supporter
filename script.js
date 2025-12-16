@@ -386,6 +386,12 @@ async function extractWithProxy(url) {
     // 複数のプロキシサービスを試行（優先順位順）
     const proxyConfigs = [
         {
+            url: `https://cors.eu.org/${url}`,
+            parseResponse: (text) => text,
+            timeout: 15000,
+            isText: true
+        },
+        {
             url: `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
             parseResponse: (data) => data.contents,
             timeout: 10000
@@ -444,6 +450,12 @@ async function extractWithProxy(url) {
 async function extractWebsiteWithProxy(url) {
     // 複数のプロキシサービスを試行（優先順位順）
     const proxyConfigs = [
+        {
+            url: `https://cors.eu.org/${url}`,
+            parseResponse: (text) => text,
+            timeout: 15000,
+            isText: true
+        },
         {
             url: `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
             parseResponse: (data) => data.contents,
