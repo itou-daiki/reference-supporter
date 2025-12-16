@@ -624,29 +624,32 @@ function extractMetadata(doc) {
     ];
     
     metaTags.forEach(({ key, selector, attr }) => {
-        const elements = doc.querySelectorAll(selector);
-        if (elements.length === 0) return;
-
-        const values = Array.from(elements).map(el => {
-            return {
-                value: attr ? el.getAttribute(attr) : el.textContent?.trim(),
-                lang: el.getAttribute('xml:lang') || el.getAttribute('lang')
-            };
-        }).filter(item => item.value);
-
-        if (values.length === 0) return;
-
         if (multiValueKeys.includes(key)) {
-            // For authors, just join them all for now.
-            metadata[key] = values.map(item => item.value);
+            // Handle multi-value keys (like authors)
+            const elements = doc.querySelectorAll(selector);
+            if (elements.length > 0) {
+                metadata[key] = Array.from(elements)
+                    .map(el => attr ? el.getAttribute(attr) : el.textContent?.trim())
+                    .filter(Boolean);
+            }
         } else {
-            // For single-value keys, prioritize Japanese.
-            const jaValue = values.find(item => item.lang === 'ja');
-            if (jaValue) {
-                metadata[key] = jaValue.value;
-            } else {
-                // Fallback to the first value found.
-                metadata[key] = values[0].value;
+            // Handle single-value keys, prioritizing Japanese
+            let element = null;
+            // Try to find the Japanese version first
+            element = doc.querySelector(`${selector}[xml\\:lang="ja"]`) || doc.querySelector(`${selector}[lang="ja"]`);
+            
+            // If no Japanese version, find the first one without any lang attribute (neutral)
+            if (!element) {
+                element = doc.querySelector(`${selector}:not([xml\\:lang]):not([lang])`);
+            }
+            
+            // If still nothing, just grab the first one available
+            if (!element) {
+                element = doc.querySelector(selector);
+            }
+            
+            if (element) {
+                metadata[key] = attr ? element.getAttribute(attr) : element.textContent?.trim();
             }
         }
     });
