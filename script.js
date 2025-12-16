@@ -946,13 +946,19 @@ function parseWebsiteInfo(html, url) {
 
         // 最適なタイトルを選択（信頼度スコアリング）
         let bestTitle = null;
-        let bestTitleScore = 0;
+        let bestTitleScore = -100;
 
         for (const source of titleSources) {
             if (!source.value) continue;
 
             const title = source.value;
             let score = source.priority;
+            
+            // お知らせやプライバシー関連のタイトルにペナルティを課す
+            const rejectPatterns = ['お知らせ', '欧州経済領域', 'EEA', 'Cookie', 'クッキー', 'プライバシー'];
+            if (rejectPatterns.some(pattern => title.includes(pattern))) {
+                score -= 10; // Apply a heavy penalty
+            }
 
             // 品質による追加スコア
             if (title.length > 10 && title.length < 150) score += 3;
