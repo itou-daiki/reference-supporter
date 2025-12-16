@@ -1188,8 +1188,9 @@ function extractDoiFromUrl(url) {
 // DOI抽出の内部処理
 async function extractFromDOIInternal(doi, sourceInfo) {
     try {
-        // Use the universal doi.org resolver with content negotiation
-        const doiUrl = `https://doi.org/${encodeURIComponent(doi)}`;
+        // Use the universal doi.org resolver via a CORS proxy to handle redirects
+        const proxy = 'https://cors.eu.org/'; // Using the proxy I added before
+        const doiUrl = `${proxy}https://doi.org/${encodeURIComponent(doi)}`;
         
         const data = await makeApiCall(doiUrl, {
             headers: {
